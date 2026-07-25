@@ -116,8 +116,12 @@ From worst to least sensitive, and why:
    (decision D10), which is a further, distinct cost recorded in `docs/adr/003-routing-engine.md` and
    `docs/roadmap.md` — not a privacy mitigant, and not counted twice in this ranking, but worth
    naming here since it is why this flow's exposure cannot be treated as isolated from flow (a)'s.
-2. **Geocoding / place search — still the worst flow by frequency, now second by this ranking's
-   per-event/certain-existence logic.** Every build ships autocomplete-as-you-type (decision D3).
+2. **Geocoding / place search — still discloses the same intent repeatedly across a search, now
+   second by this ranking's per-event/certain-existence logic.** ("Repeatedly" here means once per
+   destination search, as a sequence of debounced queries — not a claim that geocoding fires more
+   often in absolute terms than every other flow; the tile flow's raw request rate is higher, per
+   `docs/threat-model.md` adversary 3, since it fires on every pan/zoom rather than only while
+   typing a destination.) Every build ships autocomplete-as-you-type (decision D3).
    Each debounced keystroke burst is a query, at full text precision, that cannot be coarsened
    without breaking the feature. Repeated firing during a single destination search means this is a
    **sequence** of disclosures, not one — including abandoned, deleted candidate strings that never
