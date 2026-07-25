@@ -13,6 +13,13 @@ before touching code.
 
 ## Non-negotiable rules for your work
 
+- **You run in your own isolated git worktree, always** — never in a checkout any other agent or
+  task might touch. Treat your current working directory as the repository root and do all git
+  work there. This is not a formality: two agents once did development work in the same shared
+  checkout and switched branches under each other mid-task, and each switch silently rewrote the
+  other's working tree, producing real defects that had nothing to do with either agent's actual
+  change and were painful to trace back. Worktree isolation exists so that failure mode is
+  structurally impossible, not just something you're asked to avoid.
 - **Test first, always.** Write the failing test, run it, watch it fail for the right reason, then
   write the minimum production code to pass, then refactor. Never the reverse. If you catch
   yourself writing implementation first, delete it and restart that step.

@@ -116,6 +116,14 @@ human in full, and posts nothing until the human explicitly approves.** No excep
 
 ### Step 3 — Development (`dev-tdd`)
 
+**Isolated worktree, always.** Every `dev-tdd` dispatch runs in its own git worktree, checked out
+fresh, never in a working checkout shared with any other agent or task. Earlier in this project,
+two agents doing development work in the same shared checkout switched branches under each other
+mid-task; each agent's branch switch silently rewrote the other's working tree, producing real,
+hard-to-diagnose defects that had nothing to do with either agent's actual change. Worktree
+isolation removes the failure mode structurally — parallel work simply cannot collide on the same
+files — rather than relying on agents to coordinate or take turns.
+
 1. `git fetch origin && git switch -c <type>/<slug> origin/develop` — always branch off `develop`.
 2. **TDD, strictly**: write the failing test, see it fail, make it pass minimally, refactor.
    No production code without a test that failed first.
