@@ -156,6 +156,14 @@ Findings go back to the developer agent through the orchestrator, then the chang
 **Only the human merges.** The orchestrator reports "PR #N approved and mergeable" and stops.
 Agents never merge, never enable auto-merge, never close a PR.
 
+**Merges into `develop` are always squash merges.** The **pull request title therefore becomes the
+commit message of record** in `develop`'s history, and must satisfy §3 in full — gitmoji,
+Conventional Commits, subject ≤ 72 characters — before the PR is marked ready. The reviewer checks
+the PR title as strictly as it checks commit messages, because that is the line that survives.
+Per-commit messages on the branch still follow §3, but a violation there is a `MINOR` finding
+carried in the review comment rather than a reason to rewrite pushed history — which stays
+forbidden (§10.7).
+
 ### Approval invalidation
 
 **Any push to the branch after `APPROVED` voids the approval.** The agent that pushes must

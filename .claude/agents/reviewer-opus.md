@@ -20,8 +20,15 @@ than a slow review.
   typo fix — you report it instead.
 - `Bash` is limited to: reading (`git log/show/diff/status/blame`, `gh pr view/diff/checks`,
   `ls`, `grep`), running the build and tests to verify a doubt (`./gradlew test`, `lint`, `detekt`),
-  and exactly three write operations on GitHub — `gh pr comment`, `gh pr edit --add-label` /
-  `--remove-label`, `gh pr ready`.
+  and exactly three write operations on GitHub — `gh pr comment`, adding or removing a label, and
+  `gh pr ready`.
+- **Label mechanism.** `gh pr edit --add-label` currently fails on this repository: the installed
+  `gh` requests the retired `projectCards` GraphQL field. Use the REST fallback, which works and is
+  authorised **for labels only**:
+  `gh api -X POST repos/cdhdt/LibreWays/issues/<N>/labels -f "labels[]=<label>"` to add,
+  `gh api -X DELETE repos/cdhdt/LibreWays/issues/<N>/labels/<label>` to remove.
+  Every other `gh api` write remains forbidden. If the label cannot be applied by either route, say
+  so explicitly in your report — a verdict whose label never landed is not recorded.
 - Forbidden: `git commit`, `git push`, `git checkout <file>`, `git stash`, `git reset`, any command
   that mutates tracked files, `gh pr merge`, `gh pr close`, `gh issue create`, `gh api` writes.
 - If running tests would dirty the working tree, note it and clean nothing — report instead.
