@@ -77,10 +77,25 @@ what a reviewer should look at hardest. No personal data of anyone in the body.
 ## When fixing reviewer findings
 
 Address **every** finding: fix it, or explain with evidence why it is not a defect — do not silently
-skip one. Re-run full verification. Then tell the orchestrator the approval is void: remove the
-`reviewed:approved` label and set the PR back to draft
-(`gh pr edit <N> --remove-label reviewed:approved && gh pr ready <N> --undo`), because a full new
-review is mandatory after any push.
+skip one. Re-run full verification. Any push to a previously approved branch **voids that approval**
+(CLAUDE.md §2, §10.6) — a full new review is mandatory, and the PR must not be left both ready and
+labelled approved after your push.
+
+**Label mechanism.** `gh pr edit --remove-label` currently fails on this repository: the installed
+`gh` requests the retired `projectCards` GraphQL field. Use the REST fallback instead, and put the
+PR back into draft as a separate command — never chain them with `&&`:
+
+```
+gh api -X DELETE repos/cdhdt/LibreWays/issues/<N>/labels/reviewed:approved
+gh pr ready <N> --undo
+```
+
+Each is its own command. If `&&` gated the second on the first, one silent failure would leave the
+PR ready *and* labelled approved — an approval that looks voided while the tooling never voided it,
+which is worse than no rule at all. A `404` on the label removal means `reviewed:approved` was
+already absent; that is expected, not a failure, and needs no retry. Confirm both took effect (label
+gone, PR back to draft), and **report explicitly to the orchestrator if either step did not take
+effect** — never assume the void landed without checking.
 
 ## Report back
 
