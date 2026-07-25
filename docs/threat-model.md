@@ -9,11 +9,16 @@ deliberately do not defend against. Read both together — neither is complete a
 What an adversary would want, in rough order of sensitivity (matches the ranking in
 `docs/privacy.md`):
 
+**Re-ordered after decision D11** (Waze-backed routing accepted): a specific trip's origin and
+destination moves to the top of this list, matching `docs/privacy.md`'s re-stated Sensitivity
+ranking — this asset is now certain to be disclosed on every route request, not conditional on an
+undecided ADR.
+
 | Asset | Description |
 |---|---|
+| A specific trip's origin+destination | Now certain, not conditional (decision D11): every routing request states, together, exactly where a trip starts and ends, at full precision, to Waze/Google — see adversary 5 below |
 | Destination intent | A destination search string, revealing where the user wants to go, independent of whether a trip happens |
 | Travel patterns | Repeated trips over time that reveal habitual destinations (home, work, places of worship, medical facilities) |
-| A specific trip's origin+destination | If a remote routing shape is chosen, a single request stating exactly where a trip starts and ends |
 | Location history / trajectory | A sequence of viewport, tile, or traffic requests that approximates a route travelled during one trip |
 | Device network identity | The IP address (or lack of one, if relayed) attached to outbound requests |
 | Saved places / saved trips (v0.4+) | Persisted, named locations the user chose to keep |
@@ -43,21 +48,33 @@ What an adversary would want, in rough order of sensitivity (matches the ranking
 - **Out of scope:** defeating global traffic-analysis adversaries; that is a relay-network research
   problem, not an app-architecture one.
 
-### 2. The third-party traffic provider
+### 2. The traffic and congestion provider — Waze/Google (decision D10)
 
 - **Capability:** receives whatever flow (a) in `docs/privacy.md` sends: viewport or route-corridor
-  area, IP unless relayed.
+  area, IP unless relayed. One request returns both community incident reports and congested-segment
+  (jam) data (decision D13), so this adversary's capability did not grow with a second recipient —
+  only with more detail per area it already received.
 - **What it can learn:** a sequence of requests during a trip approximates the route travelled;
-  without a relay, the requester's IP ties that sequence to a network origin.
+  without a relay, the requester's IP ties that sequence to a network origin. Now additionally which
+  reliability-rated incidents (subtype, confirmation count, reporter-trust band, confidence, age —
+  decision D14) and congestion levels (decision D13) were present in each area — more detail about
+  *what* is disclosed, not a new *kind* of disclosure.
 - **Current exposure:** every use of the traffic/incidents layer, or every active trip, per
-  `docs/privacy.md` flow (a).
+  `docs/privacy.md` flow (a); throttled to a self-imposed five-minute minimum interval per area, with
+  overlapping areas coalesced (decision D12), since this adversary publishes no rate limit of its
+  own.
 - **Mitigation:** relay-eligibility by construction, coarsened viewport/corridor, no session
-  identifier, caching and rate limiting to reduce sample count.
+  identifier, caching and rate limiting to reduce sample count, the five-minute politeness floor and
+  area-coalescing above.
 - **Residual risk:** the trajectory-revealing nature of the flow is inherent to the feature (the app
   must ask "what's the traffic here" for wherever "here" currently is); coarsening and relay reduce
   precision and IP linkage but do not remove the fact that a sequence of queries describes a route.
+  This same operator also receives flow (d) (routing, decision D11, adversary 5 below) — the two
+  are not the same request, but they are the same recipient, which this document records as a
+  distinct, accepted cost, not a mitigant.
 - **Out of scope:** the provider's own retention and correlation practices once a request reaches
-  it — we cannot audit their servers.
+  it — we cannot audit their servers, and D10's accepted terms-of-service/database-rights exposure
+  (`docs/adr/005-traffic-source-integration.md`, `docs/roadmap.md`) does not change that.
 
 ### 3. The tile provider
 
@@ -101,29 +118,33 @@ What an adversary would want, in rough order of sensitivity (matches the ranking
   a network-adversary-independent, physical-access concern covered under adversary 7 below, not
   this one.
 
-### 5. The routing provider — conditional on an undecided choice
+### 5. The routing provider — Waze/Google, now certain (decision D11)
 
-- **Capability:** entirely dependent on the shape adopted per `docs/adr/proposals/003-routing-engine.md`:
-  - **On-device engine:** no network capability at all for this flow.
-  - **Self-hosted instance:** receives origin+destination, but only an operator the user explicitly
-    chose to trust.
-  - **Third-party remote API:** receives origin and destination together, at full precision, in one
-    request, unless relayed for IP.
-- **What it can learn (worst case — remote API):** an unambiguous statement of a specific trip in
-  progress — where it starts and ends — repeated on every reroute. This is the single most
-  sensitive disclosure possible in this app if this shape is chosen.
-- **Current exposure:** **undecided.** This is deliberately not resolved here; see
-  [Open question](#open-question) below.
-- **Mitigation:** relay-eligibility by construction if a remote shape is chosen. No coordinate
-  coarsening is available for this flow without breaking routing correctness — unlike flows 2–4,
-  precision cannot be traded away here.
-- **Residual risk:** if the remote-API shape is chosen, this adversary learns more, in a single
-  event, than any other adversary in this document — worse than the geocoding provider, because
-  origin and destination are confirmed together rather than a single destination text. If the
-  on-device shape is chosen, this adversary does not exist for this flow at all. The magnitude of
-  this risk is therefore entirely a function of a decision not yet made.
-- **Out of scope until the ADR is accepted:** stating a residual-risk number for this adversary
-  more precise than "conditional, and potentially the worst in the app."
+- **Capability:** **settled** by `docs/adr/003-routing-engine.md` — v0.1's `RouteProvider` is
+  Waze-backed, the same operator as adversary 2 above (decision D10). This adversary receives origin
+  and destination together, at full precision, in one request, unless relayed for IP; the on-device
+  and self-hosted alternatives `docs/adr/proposals/003-routing-engine.md` also evaluated were not
+  chosen for v0.1.
+- **What it can learn:** an unambiguous statement of a specific trip in progress — where it starts
+  and ends, together, at full precision — repeated on every reroute (v0.2 onward). This is now the
+  single most sensitive disclosure in this app, and it is **certain**, not conditional: it is what
+  v0.1 ships, not a worst-case scenario among several live possibilities.
+- **Current exposure:** every route request, and every reroute from v0.2 onward. No longer
+  undecided; see [Open question](#open-question) below for how this document's framing changed.
+- **Mitigation:** relay-eligibility by construction. **No coordinate coarsening is available for
+  this flow** without breaking routing correctness — unlike adversaries 2–4, precision cannot be
+  traded away here.
+- **Residual risk:** this adversary now learns more, in a single event, than any other adversary in
+  this document — worse than the geocoding provider (adversary 4), because origin and destination
+  are confirmed together rather than a single destination text. It is also the same operator as
+  adversary 2 (Waze/Google), which concentrates two of the app's most sensitive capabilities behind
+  one party's terms and logging policy — a distinct, accepted cost recorded in
+  `docs/adr/003-routing-engine.md` and `docs/roadmap.md`, not a mitigant of either risk. No offline
+  fallback exists in this milestone or the next; `RouteProvider` stays abstract so an on-device
+  engine remains addable later, but nothing in this design builds one now.
+- **Out of scope:** the provider's own retention and correlation practices once a request reaches
+  it, for the same reason as adversary 2 — we cannot audit their servers, and the accepted
+  terms-of-service/database-rights exposure does not change that.
 
 ### 6. A co-resident app on the device
 
@@ -220,8 +241,11 @@ LibreWays' design does **not** defend against, and does not claim to defend agai
 
 ## Open question
 
-**Open question — human decision required:** the routing shape (`docs/adr/proposals/003-routing-engine.md`)
-determines whether adversary 5 (the routing provider) is a non-issue (on-device engine), a
-user-controlled trust relationship (self-hosted instance), or the single worst-case disclosure in
-this entire threat model (third-party remote API). This threat model cannot be finalised for that
-adversary until the ADR is accepted; it must be revisited in the same pull request that accepts it.
+**Settled (decision D11), previously open here.** The routing shape
+(`docs/adr/003-routing-engine.md`) determined whether adversary 5 (the routing provider) would be a
+non-issue (on-device engine), a user-controlled trust relationship (self-hosted instance), or the
+single worst-case disclosure in this entire threat model (third-party remote API, specifically
+Waze's own routing endpoint). It is the last of these. Adversary 5 above and the re-ordered Assets
+table at the top of this document reflect that resolution; this threat model is finalised for that
+adversary as of this revision, with the costs accepted and recorded in
+`docs/adr/003-routing-engine.md` and `docs/roadmap.md`.
