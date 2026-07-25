@@ -29,17 +29,19 @@ map, sees their own position on the route. No guidance, no rerouting, no backgro
         ▼                                                          ▼
  ┌──────────────────────────┐   RouteProvider          ┌──────────────────┐
  │ domain: RequestRoute      ├────────────────────────▶│ data: routing    │
- │ use case                 │◀──────Route or error──────┤ source (shape   │
- └──────┬────────────────────┘                          │ undecided)      │
+ │ use case                 │◀──Route(+both durations)──┤ source (Waze,   │
+ └──────┬────────────────────┘                          │ decision D11)   │
         │ (3) Route                                      └────────┬─────────┘
         │                                                          │ HTTP via chokepoint,
-        │                                                          │ ONLY IF remote shape (§1.2 step 3)
+        │                                                          │ ALWAYS (decision D11: remote, certain)
         ▼
  ┌──────────────────────────┐  TrafficIncidentProvider ┌──────────────────┐
- │ domain: LoadIncidentsFor  ├────────────────────────▶│ data: traffic    │
- │ Route use case            │◀────Incident list──────┤ source          │
+ │ domain: LoadIncidentsFor  ├──(RouteCorridor/Viewport)▶│ data: traffic   │
+ │ Route / LoadTrafficForArea│◀─TrafficSnapshot(Incidents,│ source (Waze,  │
+ │ use cases                 │  CongestedSegments)──────┤ decision D10)   │
  └──────┬────────────────────┘                          └────────┬─────────┘
-        │ (4) Route + Incidents                                   │ HTTP via chokepoint
+        │ (4) Route + Incidents + CongestedSegments                │ HTTP via chokepoint,
+        │                                                           │ ≥5 min/area, coalesced (D12)
         ▼                                                          ▼
  ┌──────────────────────────┐   TileProvider           ┌──────────────────┐
  │ presentation: map render  ├────────────────────────▶│ data: tile       │
@@ -120,16 +122,16 @@ destination field. Nothing crosses the network yet; this is local UI state only.
 `domain`. No network; this is a local selection among already-fetched candidates.
 
 **Step 3 — traffic-aware route request.** Layer: `domain` (`RequestRoute` use case) calling the
-`RouteProvider` interface, implemented in `data` by the routing source.
-- Crosses the network: **conditionally**, depending on the undecided routing shape
-  (`architecture/README.md` §3): if the implementation is a remote routing service, both origin and
-  destination coordinates cross the network together through the chokepoint — the single most
-  sensitive coordinate pair the app produces, since together they describe a specific trip. If the
-  implementation is an on-device engine, nothing crosses the network for this step; only whatever
-  road-graph data that engine needs (fetched separately/offline, out of scope for v0.1's live
-  flow) is involved.
-  Passes the chokepoint: only if the remote shape is chosen, and then yes, unconditionally — no
-  routing call bypasses it.
+`RouteProvider` interface, implemented in `data` by the routing source (Waze, decision D11,
+`docs/adr/003-routing-engine.md`).
+- Crosses the network: **always** — this is now settled (decision D11), not conditional on an
+  undecided shape (`architecture/README.md` §3). Origin and destination coordinates cross the
+  network together through the chokepoint — the single most sensitive coordinate pair the app
+  produces, since together they describe a specific trip. The same request also returns a
+  traffic-aware and a traffic-free duration, from which `domain` computes the displayed delay as
+  their difference. An on-device engine remains a real, addable-later alternative (`RouteProvider`'s
+  signature does not depend on which one is used), but nothing in this milestone builds one.
+  Passes the chokepoint: yes, unconditionally — no routing call bypasses it.
 - Cached: a computed route for a given origin/destination/traffic-state may be cached for the
   duration of the trip context to avoid recomputation; not persisted beyond the session in v0.1.
 - Persisted: nothing in v0.1.
@@ -138,30 +140,36 @@ destination field. Nothing crosses the network yet; this is local UI state only.
 - User sees meanwhile: a loading state on the map/route panel between destination confirmation and
   route display.
 
-**Step 3b — incident overlay.** Layer: `domain` (`LoadIncidentsForRoute` use case — a distinct use
-case from `RequestRoute`, not a sub-step folded into it: incidents can fail, be retried, or be
-refreshed independently of the route itself) calling `TrafficIncidentProvider`, implemented in
-`data` by the traffic source.
-- Crosses the network: the route's geographic area (or the viewport, depending on how the source
-  is queried) goes out through the chokepoint to the third-party traffic endpoint (see
-  [`../privacy.md`](../privacy.md), traffic flow). Not the exact route polyline unless the chosen
-  provider's query model requires it — minimise to what the feature needs (`CLAUDE.md` §5.1).
+**Step 3b — incident and congestion overlay.** Layer: `domain` (`LoadIncidentsForRoute` for the
+route-scoped case, `LoadTrafficForArea` for the viewport-scoped case — distinct use cases from
+`RequestRoute`, not a sub-step folded into it: this data can fail, be retried, or be refreshed
+independently of the route itself) calling the widened `TrafficIncidentProvider`, implemented in
+`data` by the traffic source (Waze, decision D10, `docs/adr/005-traffic-source-integration.md`).
+- Crosses the network: the route's geographic area or the viewport goes out through the chokepoint
+  to Waze (see [`../privacy.md`](../privacy.md), traffic flow). Not the exact route polyline unless
+  the provider's query model requires it — minimise to what the feature needs (`CLAUDE.md` §5.1).
+  One request returns both `Incident`s and `CongestedSegment`s (decision D13). No more than one
+  request per five minutes for a given area, with overlapping areas coalesced into one (decision
+  D12).
   Passes the chokepoint: yes.
-- Cached: incident data is short-lived by nature (traffic conditions change); held in a bounded,
+- Cached: incident/jam data is short-lived by nature (traffic conditions change); held in a bounded,
   size/TTL-evicted on-disk response cache from v0.1 (decision D9) so an unchanged viewport/corridor
-  does not refire — a cache hit produces no chokepoint traffic at all.
+  does not refire — a cache hit produces no chokepoint traffic at all. This same cache is also where
+  decision D12's five-minute floor is enforced, as a distinct property from the cache's own TTL.
 - Persisted: the traffic response cache above, on-disk, bounded, not encrypted at rest, excluded
   from Android backup/Data Extraction Rules, user-clearable; see [`../privacy.md`](../privacy.md),
   traffic flow, for the full retention/deletion account.
-- On failure (traffic source unavailable): degrades to route-without-incidents per the
-  degradation strategy in `architecture/README.md` §6 — not a hard failure of the whole flow.
-- User sees meanwhile: the route can display before incidents finish loading, or both can be
+- On failure (traffic source unavailable, or a region-mismatch error per decision D15): degrades to
+  route-without-incidents per the degradation strategy in `architecture/README.md` §6 — not a hard
+  failure of the whole flow.
+- User sees meanwhile: the route can display before incidents/jams finish loading, or both can be
   shown together, depending on how the use case sequences the two calls — sequencing is an
   implementation detail, not fixed here.
 
-**Step 4 — route displayed with incidents.** Layer: `presentation` renders the `Route` and
-`Incident` list it received. No new network activity at this step — rendering consumes what
-domain already fetched.
+**Step 4 — route displayed with incidents and congestion.** Layer: `presentation` renders the
+`Route` (with its traffic-aware and traffic-free durations, decision D11), the `Incident` list, and
+the `CongestedSegment` list it received. No new network activity at this step — rendering consumes
+what domain already fetched.
 
 **Step 5 — map tiles.** Layer: `presentation` (map rendering) calling `TileProvider`, implemented
 in `data` by the tile source.
@@ -209,18 +217,19 @@ GPS API).
 
 ### 1.3 Cross-cutting notes for this flow
 
-- Every network-crossing step above (1, 3-if-remote, 3b, 5) passes through the single networking
+- Every network-crossing step above (1, 3, 3b, 5) passes through the single networking
   chokepoint (`architecture/README.md` §4). What the chokepoint applies is **not identical across
   all four**: relay selection, rate limiting and response caching apply to every one of them
   without exception. Coordinate coarsening is applied **only where the flow's correctness allows
   it** — it is a real mitigation for the traffic corridor/viewport (step 3b) and for tiles (step 5),
   but it cannot be applied to geocoding (step 1: the query text must be sent as typed, or the
-  feature breaks) or to routing over a remote shape (step 3: origin/destination must be precise
-  enough to route correctly). The chokepoint is the single place *where* coarsening happens when it
-  happens, not a claim that it happens everywhere — see [`../privacy.md`](../privacy.md) §"What this
+  feature breaks) or to routing (step 3: origin/destination must be precise enough to route
+  correctly — certain per decision D11, not conditional on a shape). The chokepoint is the single
+  place *where* coarsening happens when it happens, not a claim that it happens everywhere — see
+  [`../privacy.md`](../privacy.md) §"What this
   app cannot promise" (point 4) and its per-flow mitigation rows for exactly which policy applies to
   which flow.
-- **Every one of steps 1, 3-if-remote, 3b, and 5 is additionally blocked while `RelayConfiguration`
+- **Every one of steps 1, 3, 3b, and 5 is additionally blocked while `RelayConfiguration`
   is `NotChosen`, and fails closed rather than falling back to direct when a configured relay is
   unreachable** (step 0a above; decisions D1/D6). This is not a fifth, separate policy alongside
   relay selection/rate limiting/caching — it is what "relay selection" means at the moment no
