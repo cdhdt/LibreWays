@@ -6,12 +6,16 @@ justifications this architecture must satisfy, and [`../specs/001-navigation-mvp
 for the v0.1 requirements this structure is built to serve.
 
 This document describes **structure, responsibilities and boundaries** — not technology choices.
-Every UI toolkit, map library, routing engine, geocoder, HTTP client and persistence mechanism
-named anywhere below is a **candidate under evaluation**, never a decision. Per
-[`CLAUDE.md`](../../CLAUDE.md) §0.2, those choices are made once by the human developer and
+Every UI toolkit, map library, geocoder, HTTP client and persistence mechanism named anywhere below
+is a **candidate under evaluation**, never a decision — with one settled exception, stated here so
+it is not read as still open: the **routing engine and the traffic/incident source are decided**
+(both Waze, decisions D10/D11, recorded as `docs/adr/003-routing-engine.md` and
+`docs/adr/005-traffic-source-integration.md`), and this document names that decision explicitly
+wherever it comes up (§3, §4, §8, §9) rather than treating it as a candidate. Per
+[`CLAUDE.md`](../../CLAUDE.md) §0.2, the remaining choices are made once by the human developer and
 recorded as an ADR under [`../adr/proposals/`](../adr/proposals/); until an ADR exists, no code may
-depend on a specific one. Where this document must gesture at a shape to explain a boundary, it
-names the relevant ADR proposal instead of picking.
+depend on a specific one. Where this document must gesture at a shape to explain a boundary for one
+of those remaining open decisions, it names the relevant ADR proposal instead of picking.
 
 ## 1. Goals restated as constraints on the structure
 

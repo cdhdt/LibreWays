@@ -70,8 +70,8 @@ map, sees their own position on the route. No guidance, no rerouting, no backgro
                     │  when a configured relay is unreachable           │
                     │  (RelayUnreachable), per decisions D1/D6.         │
                     │  Coordinate coarsening applies WHERE APPLICABLE   │
-                    │  only — not to geocoding (query text) or to a     │
-                    │  remote routing shape (needs precise              │
+                    │  only — not to geocoding (query text) or to       │
+                    │  routing (Waze, decision D11 — needs precise      │
                     │  coordinates); see ../privacy.md and §1.3 below   │
                     └────────────────────────────────────────────────┘
 ```
