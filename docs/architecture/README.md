@@ -1,0 +1,345 @@
+# LibreWays — Architecture
+
+Status: living document, updated alongside code. See [`../README.md`](../README.md) for the
+documentation index, [`../privacy.md`](../privacy.md) for the data-flow and permission
+justifications this architecture must satisfy, and [`../specs/001-navigation-mvp.md`](../specs/001-navigation-mvp.md)
+for the v0.1 requirements this structure is built to serve.
+
+This document describes **structure, responsibilities and boundaries** — not technology choices.
+Every UI toolkit, map library, routing engine, geocoder, HTTP client and persistence mechanism
+named anywhere below is a **candidate under evaluation**, never a decision. Per
+[`CLAUDE.md`](../../CLAUDE.md) §0.2, those choices are made once by the human developer and
+recorded as an ADR under [`../adr/proposals/`](../adr/proposals/); until an ADR exists, no code may
+depend on a specific one. Where this document must gesture at a shape to explain a boundary, it
+names the relevant ADR proposal instead of picking.
+
+## 1. Goals restated as constraints on the structure
+
+`CLAUDE.md` §0 and §5 state product and privacy non-negotiables. This section restates each as a
+concrete requirement the module structure must enforce, not just a claim.
+
+| Goal (CLAUDE.md) | Structural requirement |
+|---|---|
+| Privacy by construction | No layer other than a single networking chokepoint may open a socket. Domain and presentation cannot leak data because they have no network capability at all — not because they are told not to use it. |
+| Works fully without Google Play Services | No layer imports a GMS-dependent type. Provider interfaces are defined in `domain` in Play-Services-neutral terms (coordinates, tiles, place results as plain data), so a GMS-free implementation is always a legal substitution. |
+| Low resource cost | Domain use cases are pure functions/coroutines with no framework overhead; background work is bounded by lifecycle, not left running; no component polls. |
+| Testability (domain testable with no Android runtime) | `domain` has zero Android framework imports, so its test suite runs as plain JVM unit tests — no emulator, no Robolectric, no instrumentation. |
+| Swappable providers | Every external data source and every strategy with more than one credible shape (notably routing) sits behind a domain-owned interface. `data` implements it; `domain` and `presentation` never reference the implementation type. |
+
+## 2. Layers
+
+Three layers, per `CLAUDE.md` §4. The names are responsibilities, not yet a package layout (§8
+below is the provisional mapping onto modules/packages).
+
+### 2.1 `domain` — pure Kotlin, zero Android imports
+
+Contains everything that defines *what the app does*, expressed in language that has no
+dependency on the Android SDK, a specific HTTP client, a specific map renderer, or a specific
+database. If a class in `domain` needs `android.*`, `androidx.*`, or a third-party SDK type to
+compile, it does not belong in `domain`.
+
+Belongs here:
+
+- **Entities / value types**: `Coordinate` (a latitude/longitude pair at a given precision — the
+  shared geographic value type used by every other entity below; a single place to express and
+  enforce "coarsened vs. precise" rather than each entity inventing its own notion of a point),
+  `Route` (geometry + traffic-adjusted cost), `Place` (a geocoded result — label, `Coordinate`,
+  confidence, provenance), `Incident` (traffic event — kind, a position expressed relative to a
+  `Route` rather than a standalone `Coordinate`, severity, freshness — this is the definition
+  `docs/specs/001-navigation-mvp.md`'s Stage A test 6 exercises; stated once here and shared,
+  not redefined per document), `Position` (the user's own location, as a domain concept:
+  `Coordinate`, accuracy, timestamp — not a platform location object), `RelayConfiguration` (the
+  user's relay choice — see below; models "direct, no relay" as an explicit, distinct selectable
+  mode, never as the absence of a choice, per decision D1 — **and** models the not-yet-chosen state
+  (`NotChosen`) as a further, separate state that blocks all egress, distinct from every selectable
+  mode including "direct, no relay" itself; the two must never collapse into one another).
+- **Use cases** (application services), named explicitly because callers and tests depend on these
+  exact names: `ResolveDestination` (destination text → candidate `Place`s), `RequestRoute`
+  (an origin `Position` and a destination `Place` → a `Route` or a domain error),
+  `LoadIncidentsForRoute` (a `Route`'s corridor → an `Incident` list or a domain error — **its own
+  use case**, not a step folded into
+  `RequestRoute`: incidents can fail, retry, and refresh independently of the route itself, and
+  `docs/architecture/data-flow.md` traces it as a distinct step for exactly this reason),
+  `TrackOwnPosition` (device position → `Position` projected onto the active route). Each use case
+  is a small, single-responsibility class taking its dependencies through the constructor (SOLID:
+  dependency inversion), returning domain types.
+- **Provider interfaces** (ports), every one of them first-class and equally load-bearing —
+  none is a lesser citizen of this list, and a decomposition that omits any of them is a defect
+  (see §9's tile-provider note): `PlaceSearchProvider`, `RouteProvider` (or an equivalent split
+  described in §3), `TrafficIncidentProvider`, **`TileProvider`** (an abstraction over *what area
+  is needed*, not over how a tile is fetched or rendered — it belongs to the same domain-port
+  standing as `RouteProvider` or `PlaceSearchProvider`; the map/tile flow needs it exercised and
+  tested exactly like every other provider, see §7 and §9), `OwnPositionSource`, `RouteCache`/
+  `PlaceCache` persistence ports, and **`RelaySettingsStore`** (the persistence port for the user's
+  `RelayConfiguration` — decision D2, recorded as `docs/adr/014-settings-persistence.md`, makes
+  this setting persisted from v0.1 via Jetpack DataStore Preferences in `data`, never
+  in-memory-only; `domain` only sees the port, not the storage mechanism). `domain` defines the
+  shape of these interfaces; it does not implement or know about any concrete provider.
+- **Domain error types** for expected failure modes: no result found, permission denied,
+  rate-limited, `ProviderUnreachable` (the relay path is fine; the upstream provider itself
+  failed), and two further, never-conflated relay-specific failures per decision D6 —
+  `RelayNotChosen` (egress blocked because no relay choice has been made yet, decision D1) and
+  `RelayUnreachable` (a *configured* relay could not be reached, decision D1, fail-closed). All
+  three are distinct types precisely because the user's remedy differs (retry later; choose a
+  mode; fix or change the relay) — see §6.
+
+Does not belong here: HTTP details, serialization formats, `Context`, `Intent`, coroutines
+dispatchers tied to Android (`Dispatchers.Main` is fine only as a parameter, never a hardcoded
+default), map SDK types, database entities/DAOs, view state, string resources.
+
+### 2.2 `data` — implementations
+
+Implements the `domain` provider interfaces against real external systems and local storage.
+Owns everything technology-specific: the chosen HTTP client, the chosen serialization format, the
+chosen persistence mechanism, the chosen tile/geocoding/routing/traffic backends, mapping between
+wire formats and domain types, retry/backoff and caching policy per source.
+
+Concretely, `data` will hold (implementation, not interface, in each case):
+
+- Traffic incident source (talks to the third-party traffic endpoint — see
+  [`../privacy.md`](../privacy.md)).
+- Tile source (talks to the OSM tile provider or an alternative — see the tile-source ADR
+  proposal).
+- Geocoding source (talks to the place-search provider — see the geocoder ADR proposal).
+- Routing source (on-device engine or remote routing service — see the routing ADR proposal;
+  this is the single highest-stakes swap point, discussed in §3).
+- Location source (wraps the platform location API behind `OwnPositionSource`).
+- Persistence: `RouteCache`/`PlaceCache` (the `domain`-owned cache ports, §2.1), and any
+  saved-place store from v0.4+, behind those ports. The bounded on-disk response caches introduced
+  from v0.1 (tile — decision D7; geocoding and traffic — decision D9) are **not** behind a domain
+  cache port at all — each lives entirely inside its own provider's `data` implementation
+  (`data/tiles/`, `data/geocoding/`, `data/traffic/`, §8) as a file-based store, invisible to
+  `domain`.
+
+Every `data` implementation of a network-backed provider is a **client of the networking
+chokepoint** (§4 below), never a direct socket user.
+
+### 2.3 `presentation` — UI state and rendering
+
+Renders domain state and forwards user intent to use cases. Holds **no business logic**: no
+routing decisions, no cost calculation, no cache policy, no retry logic. A presentation class may
+map a domain type to a display-ready view model (formatting, localisation-ready strings) but must
+not derive new domain facts (e.g. it does not decide whether a route is "still valid" — that is a
+use case's job, expressed as domain state the presentation layer only renders).
+
+### 2.4 Dependency direction
+
+```
+presentation ──depends on──▶ domain ◀──implements──── data
+                                ▲
+                                └── data depends on domain interfaces, never the reverse
+```
+
+Rule: **dependencies point inward, toward `domain`.** `domain` depends on nothing else in the app.
+`data` depends on `domain` (to implement its interfaces) and on whatever external libraries a
+given provider needs. `presentation` depends on `domain` (use cases, types) and is wired to a
+concrete `data` implementation only at the composition root (wherever dependency injection is
+assembled) — `presentation` code never imports a `data` class directly.
+
+**Enforcement**: this is a review-gate invariant, not an aspiration. `reviewer-opus` (per
+`CLAUDE.md` §2 Step 4) checks, for every changed file: does anything under `domain/` import
+`android.*`, a third-party SDK, or a `data`/`presentation` type? Does `presentation/` import a
+`data` implementation class directly instead of a `domain` interface? Either is a blocker finding.
+A build-time check (module boundaries, or lint rule, or separate Gradle modules — module layout
+is itself open, see [`../adr/proposals/010-module-layout.md`](../adr/proposals/010-module-layout.md))
+is the long-term goal; until it exists, review is the enforcement mechanism and must not be
+skipped or waived.
+
+## 3. Provider abstraction: why it is a rule here specifically
+
+Every external data source is reached exclusively through a `domain`-owned interface. This is not
+generic hexagonal-architecture boilerplate for its own sake — two concrete facts in this project
+make it load-bearing:
+
+1. **The routing decision is unresolved, and its candidate shapes have opposite privacy
+   profiles.** An on-device routing engine (candidate) never sends the user's origin or
+   destination anywhere. A remote routing API (candidate) necessarily sends origin and destination
+   *together* to a third party — the single most sensitive pair of coordinates the app handles,
+   because together they describe a specific trip, not just an area of interest. `domain` must be
+   written so that it cannot tell which of these it is talking to: a `RouteProvider` interface
+   returning a `Route` (or a domain error) given an origin `Position` and a destination `Place` —
+   matching FR-4, the `RouteProvider` port definition, and test 16 in
+   `docs/specs/001-navigation-mvp.md`, not two `Place`s. Whether the implementation behind
+   it does the computation on-device or ships the request off-device is a `data`-layer and
+   networking-chokepoint concern only. This lets the human evaluate and later change the routing
+   strategy — including switching from remote to on-device for privacy reasons, or the reverse for
+   a resource-cost reason — without touching `domain` or `presentation` at all, and without a
+   review needing to re-audit those layers for a routing change.
+2. **Every other source (traffic, tiles, geocoding) is a distinct third party with its own
+   endpoint, rate limits and data sensitivity** (see [`../privacy.md`](../privacy.md)). Isolating
+   each behind its own interface means a provider swap (e.g. changing tile source, or adding a
+   fallback geocoder) is a `data`-layer change with a bounded blast radius: implement the
+   interface, wire it at the composition root, done. It also means each provider can be faked
+   individually in domain-level tests (§7) without standing up any real network dependency.
+
+The general rule: if a responsibility might plausibly be swapped, degraded, or run entirely
+on-device instead of remotely, it is named as a `domain` interface first, and the concrete
+implementation is a `data`-layer plug-in behind it.
+
+## 4. The networking chokepoint (invariant)
+
+**Every outbound network request the app makes passes through exactly one path.** Concretely:
+there is a single component in `data` responsible for issuing HTTP(S) requests; every provider
+implementation (traffic, tiles, geocoding, and routing if the chosen shape is remote) calls into
+it rather than opening its own connection.
+
+This exists because `CLAUDE.md` §5.1 requires the user-selectable relay, coordinate coarsening,
+rate limiting and response caching to be applied **in exactly one place** — a policy scattered
+across N call sites is a policy that gets missed at call site N+1. Centralising the path is what
+makes "the relay applies to everything" a structural fact instead of a per-provider promise that
+has to be re-verified every time a provider is added or changed.
+
+**Invariant, checked at review:**
+
+- **The chokepoint blocks every call while `RelayConfiguration` is `NotChosen`, and fails closed
+  when a configured relay is unreachable (decision D1).** Neither of these is optional or a
+  per-provider decision: no request reaches any provider before an explicit relay choice has been
+  made (surfacing `RelayNotChosen`), and a configured-but-unreachable relay causes the call to
+  fail outright (surfacing `RelayUnreachable`) rather than silently retrying direct. A chokepoint
+  implementation that permits any request through either of these states — even transiently, even
+  for "just this one provider" — is a **blocker finding**, identical in severity to a bypass of
+  the chokepoint itself.
+- Any production code that performs its own HTTP call outside the chokepoint component is a
+  **blocker finding**, full stop — no exception for "just this one small request." The
+  relay-selection, coarsening and rate-limiting policy lives in the chokepoint, not duplicated
+  or reimplemented by an individual provider.
+- A map/tile library that manages its own internal networking (common for such libraries — they
+  often ship a built-in tile fetcher) must be evaluated against this invariant **before adoption**:
+  can its networking be redirected through the chokepoint (custom transport/interceptor hook), or
+  must it be disabled in favor of feeding it tiles fetched through the chokepoint by our own code?
+  If neither is possible, the library is unsuitable regardless of its other merits. **This is an
+  unresolved risk, not a hypothetical**: it is flagged here, in `docs/architecture/data-flow.md`
+  (tile-fetch step), and is the decision driver for
+  [`../adr/proposals/002-map-rendering-and-tiles.md`](../adr/proposals/002-map-rendering-and-tiles.md)
+  — the point where a reader (and the human deciding the ADR) must actually resolve it, not
+  something this document settles.
+- The chokepoint's own implementation (which HTTP client, which relay mechanism) is itself an open
+  decision — see the HTTP-stack and relay ADR proposals. What is fixed here is only that it is
+  singular and mandatory, not what it is built from.
+
+## 5. Concurrency and lifecycle
+
+- **Structured concurrency**: every coroutine launched by a use case or provider implementation is
+  scoped to something with a well-defined lifetime (a screen, a trip, a single request) — no
+  global unscoped `GlobalScope` launches, no fire-and-forget with no owner.
+- **No main-thread work**: network calls, disk access, and any non-trivial computation (route
+  cost evaluation, geometry processing) run off the main thread; `presentation` only ever
+  collects/observes results.
+- **Cancellation tied to screen/trip lifecycle**: leaving the screen that requested a route, or
+  ending the current trip, cancels the in-flight work for it. Nothing keeps running for a screen
+  the user has left.
+- **No polling.** State changes (position updates, incident refresh) are driven by explicit
+  triggers (user action, a bounded/lifecycle-scoped location callback) rather than a timer loop
+  that runs regardless of need.
+- **Deferrable work is batched**, not issued eagerly one item at a time — relevant once caching or
+  prefetch-adjacent work exists (not in v0.1's minimal flow, but a constraint on how it must be
+  added later).
+- **Nothing runs when the user is not navigating.** No background service, no scheduled job, no
+  location subscription active outside an active screen/trip context in v0.1. (v0.2 introduces a
+  foreground, user-visible service for active guidance — still no background location, see
+  [`../privacy.md`](../privacy.md) and [`../specs/001-navigation-mvp.md`](../specs/001-navigation-mvp.md).)
+
+## 6. Error handling
+
+- **Expected failures are explicit result types in `domain`** — e.g. "no route found",
+  `ProviderUnreachable`, "permission denied", "rate-limited by relay policy" are modelled as a
+  sealed result/error type returned from a use case, not thrown. Calling code (presentation) is
+  forced by the type system to handle them, and tests can assert on them without touching
+  exception machinery. Relay failure is never folded into `ProviderUnreachable` (decision D6): a
+  choke-point call blocked because `RelayConfiguration` is `NotChosen` returns `RelayNotChosen`,
+  and one that fails because a *configured* relay is unreachable returns `RelayUnreachable` —
+  distinct types because the user's remedy differs (choose a mode; fix or change the relay; retry
+  later, respectively).
+- **Unexpected failures are exceptions** — programming errors, contract violations. They are not
+  caught and silently swallowed anywhere; `data`-layer code translates only the failures it
+  understands into domain error types and lets everything else propagate.
+- **Per-provider degradation strategy**: each provider interface's contract includes what happens
+  when that specific provider is unavailable —
+  - Traffic incidents unavailable: route computation and display continue without incident
+    overlay; the user sees the route is traffic-**un**aware, not a hard failure.
+  - Tile source unavailable: map does not render; route/position state is still computable and
+    displayable in non-map form if the UI offers one, otherwise a clear "map unavailable" state.
+  - Geocoding unavailable: destination entry fails explicitly; no silent fallback to a cached or
+    guessed place.
+  - Routing unavailable: no route; explicit error state, never a stale or guessed route shown as
+    current.
+  - Location unavailable or permission denied: app degrades to "no own position on route" rather
+    than crashing or blocking the rest of the flow; see permission handling in
+    [`../privacy.md`](../privacy.md).
+
+## 7. Testability
+
+- **Unit-testable without Android, no runtime**: all of `domain` — entities, use cases, error
+  types. Because provider interfaces live in `domain`, every use case can be tested with hand-written
+  or generated fakes/stubs for `PlaceSearchProvider`, `RouteProvider`, `TrafficIncidentProvider`,
+  `TileProvider`, `OwnPositionSource`, and `RelaySettingsStore` — no real network, no real device
+  sensor, no emulator, no real DataStore Preferences instance. This is the concrete payoff of the
+  provider-abstraction rule in §3: the domain is **fully fakeable** by construction, not by
+  test-specific workarounds.
+- **Needs instrumentation**: `data` implementations that touch the real Android platform
+  (location APIs, actual persistence engine, actual HTTP stack) and `presentation` rendering
+  behaviour. These are tested with instrumentation/integration tests or, where the technology
+  choice permits, contract tests against a fake server — decided per-provider once the relevant
+  ADRs land.
+- Whatever module layout is chosen (§8 below is provisional), it must keep `domain` in a module
+  with **no Android dependency at all** so its test suite is guaranteed to run as plain JVM tests,
+  not merely "tests that happen not to use Android APIs today."
+
+## 8. Module/package sketch — PROVISIONAL
+
+The following is illustrative only, to make the layer discussion concrete. The actual module
+layout (single module with package-level separation vs. multiple Gradle modules with enforced
+boundaries) is an open §0.2 decision — see
+[`../adr/proposals/010-module-layout.md`](../adr/proposals/010-module-layout.md). Nothing below is
+binding; do not treat package names as decided.
+
+```
+(provisional, illustrative only — see adr/proposals/010-module-layout.md)
+
+domain/
+  model/          Coordinate, Route, Place, Incident, Position, RelayConfiguration, domain errors
+  usecase/        ResolveDestination, RequestRoute, LoadIncidentsForRoute, TrackOwnPosition, ...
+  provider/       PlaceSearchProvider, RouteProvider, TrafficIncidentProvider,
+                  TileProvider, OwnPositionSource, RouteCache, PlaceCache, RelaySettingsStore
+
+data/
+  traffic/        implements TrafficIncidentProvider; also owns its bounded on-disk response cache
+                  (decision D9, file-based, size/TTL-bounded LRU — see
+                  docs/specs/001-navigation-mvp.md FR-27–FR-31), consulted before any network fetch
+  tiles/          implements TileProvider; also owns the bounded on-disk tile cache (decision D7,
+                  file-based, size/TTL-bounded LRU — see docs/specs/001-navigation-mvp.md
+                  FR-27–FR-31), consulted before any network fetch
+  geocoding/      implements PlaceSearchProvider; also owns its bounded on-disk response cache
+                  (decision D9, same file-based/size/TTL/LRU standard as the tile cache — this is
+                  the most sensitive of the three caches, not a looser one), consulted before any
+                  network fetch
+  routing/        implements RouteProvider (on-device or remote — undecided)
+  location/       implements OwnPositionSource
+  persistence/    implements RouteCache / PlaceCache
+  settings/       implements RelaySettingsStore via Jetpack DataStore Preferences (decision D2,
+                  docs/adr/014-settings-persistence.md)
+  net/            the networking chokepoint (§4) — relay, coarsening where applicable, rate
+                  limiting, caching
+
+presentation/
+  <feature>/      screen state holders, view-model-equivalents, rendering
+```
+
+## 9. Undecided, and where the decision lands
+
+| Open decision | Layer(s) affected | What must NOT depend on the choice |
+|---|---|---|
+| UI toolkit (Compose vs Views) | `presentation` only | `domain` and `data` reference nothing UI-toolkit-specific; use cases return plain domain/data types, not toolkit state holders. |
+| Map rendering and tile source | `data` (tile source implementation) + `presentation` (rendering) | `domain`'s `TileProvider` interface and `Route`/`Incident`/`Position` types are toolkit-agnostic; a map library swap is confined to its `data` implementation plus the `presentation` rendering code. |
+| Routing engine and data shape (on-device vs remote) | `data` (routing source) + networking chokepoint (only if remote) | `domain`'s `RouteProvider` interface and every use case that calls it; `presentation` renders whatever `Route` it receives regardless of how it was computed. See §3. |
+| Geocoding/place-search provider | `data` (geocoding source) | `domain`'s `PlaceSearchProvider` interface and `Place` type. |
+| Traffic source integration and rate limiting | `data` (traffic source) + networking chokepoint | `domain`'s `TrafficIncidentProvider` interface; the rate-limit policy itself lives in the chokepoint (§4), not duplicated in the provider. |
+| HTTP and serialization stack | networking chokepoint + every `data` provider that is network-backed | `domain` (no provider interface mentions HTTP or a serialization format); `presentation`. |
+| Relay/proxy implementation (Tor, HTTP/SOCKS proxy, self-hosted instance) | networking chokepoint exclusively | Every provider implementation and all of `domain`/`presentation` — a provider never knows or cares whether a relay is active. |
+| Local persistence for `RouteCache`/`PlaceCache` (Room vs SQLDelight vs plain SQLite — ADR 008) | `data` (persistence implementations of these cache ports) | `domain`'s cache port interfaces; nothing above `data` reads a database row type. **Decided separately**: `RelaySettingsStore` is not part of this open decision — it is settled as Jetpack DataStore Preferences from v0.1 (decision D2, recorded as `docs/adr/014-settings-persistence.md`) precisely so it does not wait on ADR 008, which keeps ownership of the `RouteCache`/`PlaceCache` question only. The v0.1 on-disk tile cache (decision D7) is likewise not part of this open decision: it is a file-based store (see `docs/specs/001-navigation-mvp.md` FR-27–FR-31), not a structured-database question. |
+| Foreground-service and location strategy (v0.2) | `data` (location source) + a v0.2 service component | `domain`'s `OwnPositionSource` interface and use cases consuming `Position`. |
+| Module layout (single module vs multi-module) | build structure, all layers' packaging | The layer responsibilities and dependency direction in §2–§3, which hold regardless of how they are packaged. |
+| CI, reproducible build and F-Droid pipeline | build tooling only | All runtime layers — this is a build-time concern with no runtime architectural coupling. |
+
+Each row's ADR is written when a task first needs that decision, per `CLAUDE.md` §0.2; none of
+them may be settled implicitly by this document or by writing code against a specific candidate.
