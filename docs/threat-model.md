@@ -61,8 +61,9 @@ undecided ADR.
   *what* is disclosed, not a new *kind* of disclosure.
 - **Current exposure:** every use of the traffic/incidents layer, or every active trip, per
   `docs/privacy.md` flow (a); throttled to a self-imposed five-minute minimum interval per area, with
-  overlapping areas coalesced (decision D12), since this adversary publishes no rate limit of its
-  own.
+  overlapping areas coalesced (decision D12), since no rate limit for this endpoint was found
+  published anywhere by the recon behind this decision — an absence of evidence, stated as such,
+  not a claim that no limit exists.
 - **Mitigation:** relay-eligibility by construction, coarsened viewport/corridor, no session
   identifier, caching and rate limiting to reduce sample count, the five-minute politeness floor and
   area-coalescing above.

@@ -85,7 +85,7 @@ Everything that follows describes what the app does; it does not change the limi
 
 | Flow | Third party | What is sent | Precision | Trigger | Local storage | Relay-eligible | Sensitivity |
 |---|---|---|---|---|---|---|---|
-| (a) Traffic and congestion endpoint | **Waze/Google** (decision D10; `docs/adr/005-traffic-source-integration.md`) | Viewport or route-corridor area, IP — one request returns both community incident reports and congested-segment (jam) data (decision D13) | Coarsened bounding box/corridor | Map/traffic layer visible, active trip; no more than once per five minutes for a given area, overlapping areas coalesced (decision D12) | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) | Yes | Highest — see re-stated ranking below |
+| (a) Traffic and congestion endpoint | **Waze/Google** (decision D10; `docs/adr/005-traffic-source-integration.md`) | Viewport or route-corridor area, IP — one request returns both community incident reports and congested-segment (jam) data (decision D13) | Coarsened bounding box/corridor | Map/traffic layer visible, active trip; no more than once per five minutes for a given area, overlapping areas coalesced (decision D12) | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) | Yes | Moderate — third of five, see re-stated ranking below |
 | (b) OSM tile provider | Tile provider (ADR pending) | Tile coordinates (z/x/y) for visible area, IP | Tile-grid quantised | Map on screen | On-disk tile cache (size/TTL-bounded) | Yes | Lowest of the four network flows |
 | (c) Geocoding / place search | Geocoding provider (ADR pending) | Free-text search string per debounced keystroke burst (including deleted partial strings), optional viewport bias, IP | Full text precision — not coarsenable | Repeatedly per trip: each debounced keystroke burst past 3 characters (600 ms debounce, decision D3) — not once per search | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) — the most sensitive local artefact in the app, bound to the same standard as the tile cache, not a looser one | Yes | High — certain, but no longer the single worst flow, see re-stated ranking below |
 | (d) Routing | **Waze/Google** — the same operator as flow (a) (decision D11; `docs/adr/003-routing-engine.md`) | Origin + destination together, at full precision, in one request; that same request also returns a traffic-aware and a traffic-free duration (decision D11) | Full precision — not coarsenable | User requests a route; reroute | Active-route geometry, session-only | Yes | **Highest — now certain, not conditional; the single worst flow, see re-stated ranking below** |
@@ -165,7 +165,7 @@ this document is built on, not branding — see `README.md`'s non-affiliation di
 | Trigger | User has the traffic layer visible, or is navigating |
 | Local storage | On-disk response cache, size- and TTL-bounded (LRU eviction), **from v0.1** (decision D9 — this is decided, not a v0.4 candidate). Not encrypted at rest. Excluded from Android Auto Backup and Data Extraction Rules; user-clearable (`docs/specs/001-navigation-mvp.md` FR-27–FR-31) |
 | Observer inference | A single request is low-information; a sequence over the duration of a trip approximates the route travelled — now also including which reliability-rated incidents (subtype, confirmation count, reporter-trust band, confidence, age — decision D14) and congestion levels (decision D13) were present in each area. This is additional detail about *what* is disclosed per area, not a new *recipient* or a new *kind* of disclosure. The cache itself, examined on the device, reveals recently-viewed traffic areas without needing to capture network traffic — a physical-access risk, not only a network one |
-| Mitigation | Relay-eligible by construction; viewport coarsening; no session identifier; debounce on pan/zoom; a self-imposed five-minute minimum request interval per area and coalescing of overlapping-area requests (decision D12), since Waze publishes no rate limit for this endpoint; the bounded, user-clearable, backup-excluded response cache reduces repeat requests (decision D9) |
+| Mitigation | Relay-eligible by construction; viewport coarsening; no session identifier; debounce on pan/zoom; a self-imposed five-minute minimum request interval per area and coalescing of overlapping-area requests (decision D12), since no rate limit for this endpoint was found published anywhere by the recon behind this decision (an absence of evidence, not evidence that none exists); the bounded, user-clearable, backup-excluded response cache reduces repeat requests (decision D9) |
 | Data source's own risk exposure | Waze's terms grant a personal, non-commercial, revocable, non-transferable, non-sub-licensable licence; its data is a protected database under EU law; the endpoints used are undocumented and may change or be withdrawn without notice. The maintainer has accepted this exposure as a known risk — see `docs/adr/005-traffic-source-integration.md` and `docs/roadmap.md` — it is not hidden and not an open question |
 
 ### (b) OSM tile provider
@@ -271,8 +271,13 @@ reading the code, not by trusting a claim:
    none is encrypted at rest, stated plainly rather than implied protected. The geocoding cache is
    held to the same standard as the other two, not a looser one, because it is the most sensitive
    of the three artefacts.
-8. **Polite rate limiting.** Requests respect the target provider's published usage policy;
-   failures back off rather than retry in a tight loop.
+8. **Polite rate limiting.** Requests respect the target provider's published usage policy where
+   one exists. For the traffic, congestion, and routing flows (Waze/Google, decisions D10/D11), no
+   such policy was found published anywhere by the recon behind those decisions — an absence of
+   evidence, not confirmation that none exists — so a self-imposed five-minute minimum interval and
+   request coalescing apply instead (decision D12, `docs/adr/005-traffic-source-integration.md`).
+   Failures back off rather than retry in a tight loop, for every flow regardless of whether a
+   published policy exists.
 
 ## Permissions
 

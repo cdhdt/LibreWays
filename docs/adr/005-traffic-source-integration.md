@@ -106,10 +106,11 @@ names need their own verification step, not a documentation read.
   call; testing the widened `TrafficIncidentProvider` in isolation with hand-written fakes and
   fixture responses; adding jams to the existing traffic flow without a new recipient or a new
   cache, since one request already returns both.
-- **Hard**: Waze publishes no rate limit for this endpoint, so the five-minute politeness figure is
-  a self-imposed, unverified-against-any-published-limit value, not a documented ceiling — if this
-  proves insufficient in practice, only the maintainer can revise it, and doing so does not change
-  this ADR's architecture.
+- **Hard**: no rate limit for this endpoint was found published anywhere by the recon behind this
+  decision — an absence of evidence, not a confirmed absence of any limit — so the five-minute
+  politeness figure is a self-imposed value, not a documented ceiling — if this proves insufficient
+  in practice, only the maintainer can revise it, and doing so does not change this ADR's
+  architecture.
 - **Must be abstracted now to stay reversible**: `TrafficIncidentProvider` in `domain`, widened to
   accept a route-corridor-or-viewport area and to return both incidents and congested segments, so a
   future source change is a `data`-layer swap, not a rearchitecture. The enum-with-`Unknown`-
