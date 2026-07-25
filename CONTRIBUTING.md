@@ -83,6 +83,10 @@ Adds the destination-search flow to the data-flow table; no code change.
 One logical change per commit. No work-in-progress commits pushed. No `--no-verify`. No
 force-push and no history rewrite on any pushed branch.
 
+Merges into `develop` are always squash merges, so the **pull request title becomes the commit
+message recorded in `develop`'s history**. It must follow the same convention as a commit subject
+above: gitmoji, Conventional Commits, subject line ≤ 72 characters.
+
 ## Pull request expectations
 
 - **Small and focused.** One change, one concern. Split larger work into several PRs rather than
