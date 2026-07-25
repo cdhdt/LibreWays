@@ -83,8 +83,13 @@ the orchestrator (see `012-build-and-test-tooling.md`) and made the 014 decision
 corresponding `proposals/` entry (012, 014) while 001–011 remain proposals, and that gap is
 expected, not an error. **003 and 005 follow the more typical path**: each has a `proposals/` brief
 recording the analysis, and each is now additionally recorded as an accepted ADR at the top level
-under the same number — the brief stays as the record of the analysis that led to the decision, per
-the lifecycle above, not superseded or deleted. **013 tracks a real gap, not a fourth status value**: CLAUDE.md §0.2 names
+under the same number. The brief file itself is **not deleted** — it stays in the repo as the record
+of the analysis that led to the decision, per the lifecycle above — but its own `Status` header now
+reads `superseded by <NNN>-<title>.md`, pointing at the accepted ADR, precisely so nothing in the
+brief's own present-tense analysis (written before the decision existed) reads as an invitation to
+re-open a decision this index already lists as `accepted`. This index's own Status column for 003
+and 005 is unaffected by that brief-level relabelling: it reports the decision's status, which is
+`accepted`, not the brief's. **013 tracks a real gap, not a fourth status value**: CLAUDE.md §0.2 names
 "background scheduling strategy" as an open §0.2 decision, but no proposal brief covers
 deferrable/batched background work (proposal 009 covers only the foreground-service/location
 strategy). Its Status cell deliberately does not use any of the three status words above, since
