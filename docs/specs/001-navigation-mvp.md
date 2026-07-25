@@ -410,16 +410,18 @@ ports (no mocking library).
 
 ## TDD test list
 
-Ordered; each test is the next smallest failing step. 121 tests total: 1–75 from the base feature,
+Ordered; each test is the next smallest failing step. 122 tests total: 1–75 from the base feature,
 76–87 appended for decision D9 (the geocoding/traffic response caches) and for two
 presentation-layer gaps a later review found (the `RelayUnreachable` UI state and the cache-clear
 settings affordance), 88–117 appended for decisions D10–D16 (Waze-backed routing and traffic
 integration: the `Incident`/`CongestedSegment`/`Route` domain additions, the widened traffic port
 and its new use case, the traffic/jam and routing adapters, the five-minute politeness floor and
 area-coalescing, and attribution), 118–120 appended for a review-found gap (FR-32–FR-34's display
-requirements had no Stage G test), and 121 appended for a second review-found gap (FR-39's
-no-automatic-polling rule had no test) — appended rather than inserted, so no test 1–120 was
-renumbered. Test 6 is corrected in place (see the note under it) without changing its number. Tests in
+requirements had no Stage G test), 121 appended for a second review-found gap (FR-39's
+no-automatic-polling rule had no test), and 122 appended for a third review-found gap (FR-37's
+region-mismatch rule had no test for the routing flow, only the traffic/jam flow) — appended rather
+than inserted, so no test 1–121 was renumbered. Test 6 is corrected in place (see the note under
+it) without changing its number. Tests in
 Stages A–E use hand-written fakes of the domain ports above and are independent of every undecided
 library. Stages F and G name the component under test generically ("the injected client/HTTP
 port") precisely so they do not assume a library choice; when an ADR is resolved, the concrete
@@ -816,6 +818,24 @@ spaced or merged.
      that the five-minute figure (FR-35) is a minimum spacing between real, user-triggered calls,
      never a background poll the adapter invents on its own (FR-39).
 
+**Stage F (continued) — routing adapter region mismatch (FR-37, decision D15)**
+
+Appended for a review-found gap: FR-37 and decision D15 explicitly cover "a traffic, jam, **or
+routing** area/pair" spanning two regions, and test 107 verifies this for the traffic/jam adapter,
+but no equivalent test existed for the routing adapter, and test 116's mirror list (unreachable,
+offline, relay, throttled, blocked) deliberately did not include it either. This is not a
+theoretical gap: a routing request's origin and destination are two independent points that can
+straddle a regional boundary just as plausibly as a viewport can — a cross-border trip (e.g. an
+origin and destination in two different countries the region-selector maps to different regional
+Waze hosts) is an ordinary routing use case, not an edge case invented for this test. The routing
+flow can hit this condition, so it is tested, not argued away.
+
+122. Given an origin/destination pair the fake region-selector reports as spanning two regions, the
+     routing adapter fails explicitly with a distinct region-mismatch error (FR-37, decision D15) —
+     never silently sending the pair to a single region's host, splitting the request, retrying, or
+     returning a partial or guessed route — mirroring test 107's behaviour for the routing flow
+     specifically.
+
 ## Definition of Done
 
 - [ ] FR-1 through FR-39 are each covered by at least one passing test from the list above,
@@ -861,6 +881,9 @@ spaced or merged.
 - [ ] Tests 112–116 pass: the Waze-backed routing adapter (decision D11) carries both durations,
       fails explicitly rather than guessing on a missing figure or a "no path" response, and applies
       the same resilience behaviour as the traffic/jam adapter.
+- [ ] Test 122 passes: FR-37's region-mismatch rule (decision D15) is enforced for the routing
+      flow, not only the traffic/jam flow (test 107) — a cross-region origin/destination pair fails
+      explicitly rather than being silently sent to one region's host.
 - [ ] Test 117 passes: the attribution statement (FR-38, decision D10) is rendered, without any
       third-party branding, and the non-affiliation disclaimer is unchanged.
 - [ ] Tests 118–120 pass: FR-32 (viewport-independent incidents with their reliability signals),
@@ -908,10 +931,10 @@ spaced or merged.
 |---|---|
 | [`001-ui-toolkit`](../adr/proposals/001-ui-toolkit.md) — `proposed` | All of Stage G (presentation), tests 60–75, plus the appended presentation tests 86–87, 117, and 118–120 |
 | [`002-map-rendering-and-tiles`](../adr/proposals/002-map-rendering-and-tiles.md) — `proposed` | The map screen (tests 65–72) and the tile-provider outbound flow (tests 44–48) |
-| [`003-routing-engine`](../adr/003-routing-engine.md) — **`accepted`** (decision D11) | The routing adapter (tests 38–40, 65–69, and the appended tests 112–116); OQ3 is resolved by this decision and D13, see [Open questions](#open-questions) |
+| [`003-routing-engine`](../adr/003-routing-engine.md) — **`accepted`** (decision D11) | The routing adapter (tests 38–40, 65–69, and the appended tests 112–116, 122); OQ3 is resolved by this decision and D13, see [Open questions](#open-questions) |
 | [`004-geocoding-provider`](../adr/proposals/004-geocoding-provider.md) — `proposed` | The geocoding adapter and search screen wiring (tests 30–34, 36–37, 60–64) — test 35 (`RelaySettingsStore`) sits between 34 and 36 but does not need this ADR, see below |
 | [`005-traffic-source-integration`](../adr/005-traffic-source-integration.md) — **`accepted`** (decisions D10, D12–D15) | The traffic/jam adapter (tests 41–43, 71, and the appended tests 100–111, 121) |
-| [`006-http-and-serialisation`](../adr/proposals/006-http-and-serialisation.md) — `proposed` | Concrete request/response mapping in all network adapters (tests 30–34, 36–48, 100–116, 121) — again excluding test 35, which needs no HTTP client |
+| [`006-http-and-serialisation`](../adr/proposals/006-http-and-serialisation.md) — `proposed` | Concrete request/response mapping in all network adapters (tests 30–34, 36–48, 100–116, 121, 122) — again excluding test 35, which needs no HTTP client |
 | [`007-relay-and-proxy`](../adr/proposals/007-relay-and-proxy.md) — `proposed` | The concrete relay-aware client (tests 36, 37, 40, 43, 46, 47, 57, 58, 73, 74, 86, 109, 116) — the domain port itself (test 5) and the `RelaySettingsStore` persistence mechanism (test 35, settled independently by decision D2/ADR 014) do not need it |
 | [`010-module-layout`](../adr/proposals/010-module-layout.md) — `proposed` | Not a hard blocker for writing domain tests in a temporary single module, but rework is expected if skipped before the first commit |
 
