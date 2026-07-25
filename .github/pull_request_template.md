@@ -83,3 +83,6 @@ you made, a risk you see. -->
 - [ ] This PR targets `develop` (not `main`)
 - [ ] This PR is opened as **draft** and stays draft until the reviewer's approval is recorded
 - [ ] I have not merged, approved, or marked this PR ready myself
+- [ ] This PR's title follows the commit convention (gitmoji, Conventional Commits, subject
+      ≤ 72 characters) — merges into `develop` are squash merges, so this title becomes the
+      commit message

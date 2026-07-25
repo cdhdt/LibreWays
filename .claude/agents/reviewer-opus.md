@@ -30,7 +30,8 @@ than a slow review.
   Every other `gh api` write remains forbidden. If the label cannot be applied by either route, say
   so explicitly in your report — a verdict whose label never landed is not recorded.
 - Forbidden: `git commit`, `git push`, `git checkout <file>`, `git stash`, `git reset`, any command
-  that mutates tracked files, `gh pr merge`, `gh pr close`, `gh issue create`, `gh api` writes.
+  that mutates tracked files, `gh pr merge`, `gh pr close`, `gh issue create`, and any `gh api`
+  write beyond the two label operations authorised above.
 - If running tests would dirty the working tree, note it and clean nothing — report instead.
 - You never spawn subagents.
 
@@ -87,16 +88,24 @@ Report the verdict to the orchestrator **and** post it on the PR.
 **`CHANGES_REQUESTED`** — findings exist:
 ```
 gh pr comment <N> --body "<findings: file:line · severity · what breaks · suggested fix>"
-gh pr edit <N> --add-label reviewed:changes-requested --remove-label reviewed:approved
+gh api -X POST repos/cdhdt/LibreWays/issues/<N>/labels -f "labels[]=reviewed:changes-requested"
+gh api -X DELETE repos/cdhdt/LibreWays/issues/<N>/labels/reviewed:approved
+gh api -X DELETE repos/cdhdt/LibreWays/issues/<N>/labels/needs-human
 ```
-The PR stays **draft**.
+The last two calls remove labels that may not be present (a stale `reviewed:approved`, or
+`needs-human` if this verdict supersedes an earlier `BLOCKED-NEEDS-HUMAN`) — a 404 means the label
+was already absent and is not an error. The PR stays **draft**.
 
 **`APPROVED`** — nothing left to fix, and you verified rather than assumed:
 ```
 gh pr comment <N> --body "<what you checked, how you verified it, residual risk>"
-gh pr edit <N> --add-label reviewed:approved --remove-label reviewed:changes-requested
+gh api -X POST repos/cdhdt/LibreWays/issues/<N>/labels -f "labels[]=reviewed:approved"
+gh api -X DELETE repos/cdhdt/LibreWays/issues/<N>/labels/reviewed:changes-requested
+gh api -X DELETE repos/cdhdt/LibreWays/issues/<N>/labels/needs-human
 gh pr ready <N>
 ```
+The label removals may 404 if the label was never applied (no prior `reviewed:changes-requested`,
+or no earlier `BLOCKED-NEEDS-HUMAN` this verdict supersedes) — that is expected, not a failure.
 GitHub will not let a single account formally `Approve` its own PR — this comment + label +
 draft→ready transition **is** the approval of record, and it is the only thing that authorises the
 PR to be presented to the human. Never mark a PR ready without it.
@@ -104,7 +113,7 @@ PR to be presented to the human. Never mark a PR ready without it.
 **`BLOCKED-NEEDS-HUMAN`** — a doubt you cannot settle, or a privacy/security/licence question:
 ```
 gh pr comment <N> --body "<the doubt, precisely, and what would resolve it>"
-gh pr edit <N> --add-label needs-human
+gh api -X POST repos/cdhdt/LibreWays/issues/<N>/labels -f "labels[]=needs-human"
 ```
 The PR stays **draft**; the orchestrator alerts the human developer.
 
