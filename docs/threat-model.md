@@ -108,12 +108,15 @@ undecided ADR.
   (3 characters), debounce (600 ms), in-flight cancellation, and no-whitespace-request mitigations
   specified in `docs/privacy.md` (reduces the number of partial-intent strings sent and cuts off
   abandoned typing early; does not reduce the sensitivity of whichever string is actually sent).
-- **Residual risk:** the highest residual risk in the app after the network layer's mitigations are
-  applied — see `docs/privacy.md`'s Sensitivity ranking, which now places this adversary first
-  because its elevated exposure is certain (ships in every build) rather than conditional on any
-  pending decision, unlike the routing provider below. The query content itself — not just the
-  requester's identity — is inherently disclosed to this provider, now across a sequence of queries
-  per search rather than one. A relay hides who asked; it does not hide what was asked.
+- **Residual risk:** the **second**-highest residual risk in the app after the network layer's
+  mitigations are applied — see `docs/privacy.md`'s Sensitivity ranking, re-stated again after
+  decision D11: this adversary's exposure is certain (ships in every build), but the routing
+  provider (adversary 5 below) is now *also* certain, not conditional, since ADR-003 is accepted —
+  and a routing request's confirmed origin+destination pair is a more complete single-event
+  disclosure than any individual search string, so routing ranks first and this adversary ranks
+  second. The query content itself — not just the requester's identity — is inherently disclosed to
+  this provider, now across a sequence of queries per search rather than one. A relay hides who
+  asked; it does not hide what was asked.
 - **Out of scope:** provider-side retention; any future *user-facing* "recent searches" feature
   (not designed) — distinct from the v0.1 on-disk geocoding response cache (decision D9), which is
   a network-adversary-independent, physical-access concern covered under adversary 7 below, not
