@@ -2,10 +2,13 @@
 
 ## Status
 
-`proposed`
+`superseded by 010-module-layout.md` (accepted) — this brief's analysis led directly to that
+decision; it is kept here as the record of the analysis, per `docs/adr/README.md`'s lifecycle, and
+is no longer itself open. Do not treat anything below as inviting a re-open.
 
-Nothing in this document is authority until the human accepts it and it is recorded as an accepted
-ADR per `CLAUDE.md` §0.2.
+The maintainer chose Option C (multiple Gradle modules) immediately, not the brief's own
+recommended "Option B now, Option C later" sequencing — see
+[`../010-module-layout.md`](../010-module-layout.md) for the decision and its reasoning.
 
 ## Context
 

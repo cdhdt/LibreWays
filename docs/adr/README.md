@@ -68,7 +68,7 @@ fixed regardless of the order decisions are actually made in.
 | 007 | Relay and proxy implementation | [proposals/007-relay-and-proxy.md](proposals/007-relay-and-proxy.md) | `proposed` |
 | 008 | Local persistence | [proposals/008-local-persistence.md](proposals/008-local-persistence.md) | `proposed` |
 | 009 | Location and foreground service | [proposals/009-location-and-foreground-service.md](proposals/009-location-and-foreground-service.md) | `proposed` |
-| 010 | Module layout | [proposals/010-module-layout.md](proposals/010-module-layout.md) | `proposed` |
+| 010 | Module layout | [proposals/010-module-layout.md](proposals/010-module-layout.md) (superseded) — see [010-module-layout.md](010-module-layout.md) | `accepted` |
 | 011 | CI, reproducible build, F-Droid pipeline | [proposals/011-ci-reproducible-build-fdroid.md](proposals/011-ci-reproducible-build-fdroid.md) | `proposed` |
 | 012 | Build and test tooling | none — decided directly, no proposal brief; see [012-build-and-test-tooling.md](012-build-and-test-tooling.md) | `accepted` |
 | 013 | Background scheduling strategy | not yet written | *(no brief exists yet — not a status-vocabulary value; see note below)* |
@@ -80,8 +80,10 @@ the decision before then must stop and ask, per CLAUDE.md §9. **012 and 014 are
 accepted ADRs with no proposal brief** — the maintainer explicitly delegated the 012 decision to
 the orchestrator (see `012-build-and-test-tooling.md`) and made the 014 decision directly (see
 `014-settings-persistence.md`); ADR numbering therefore has two accepted decisions with no
-corresponding `proposals/` entry (012, 014) while 001–011 remain proposals, and that gap is
-expected, not an error. **013 tracks a real gap, not a fourth status value**: CLAUDE.md §0.2 names
+corresponding `proposals/` entry (012, 014), while 010's proposal brief was superseded by its own
+accepted ADR (the ordinary lifecycle, not a delegation like 012/014) once the maintainer decided it
+directly rather than through recon. That gap is expected, not an error. **013 tracks a real gap, not
+a fourth status value**: CLAUDE.md §0.2 names
 "background scheduling strategy" as an open §0.2 decision, but no proposal brief covers
 deferrable/batched background work (proposal 009 covers only the foreground-service/location
 strategy). Its Status cell deliberately does not use any of the three status words above, since
