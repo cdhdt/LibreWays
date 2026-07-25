@@ -2,8 +2,10 @@
 
 The test **tooling** (build system, test runner, assertions, coroutine/`Flow` testing, mocking
 policy, static analysis) is now decided — see [`adr/012-build-and-test-tooling.md`](adr/012-build-and-test-tooling.md)
-and [§8](#8-how-to-run-the-tests) below. What is still pending is everything that ADR does not
-cover: module layout, the UI toolkit, and the CI/reproducible-build pipeline — see
+and [§8](#8-how-to-run-the-tests) below. The Gradle module layout is also now decided — see
+[`adr/010-module-layout.md`](adr/010-module-layout.md): `domain` tests are plain JVM unit tests
+under the `:domain` module, guaranteed Android-free by the build, not merely by convention. What is
+still pending is the UI toolkit and the CI/reproducible-build pipeline — see
 [Pending tooling decisions](#pending-tooling-decisions). What was always fixed regardless of
 tooling remains fixed: the TDD discipline, the shape of the pyramid, what a test must and must not
 do, and the privacy/resource checks every relevant feature carries.
@@ -225,34 +227,40 @@ structurally outside a deterministic test's reach.
 
 ## 8. How to run the tests
 
-**The tooling is decided (`docs/adr/012-build-and-test-tooling.md`), but no build exists yet.**
-Concretely, per that ADR: Gradle with the Kotlin DSL and a version catalog
-(`libs.versions.toml`); JUnit4 as the test runner; `kotlin.test` for assertions;
-`kotlinx-coroutines-test` plus Turbine for coroutine/`Flow` tests; Robolectric only where a test
-genuinely cannot avoid the Android framework; androidx.test for instrumented critical paths; no
-mocking library (hand-written fakes of the domain provider interfaces instead); ktlint and detekt,
-both blocking in CI.
+The Gradle project is scaffolded (`docs/adr/012-build-and-test-tooling.md`,
+`docs/adr/010-module-layout.md`): Gradle with the Kotlin DSL and a version catalog
+(`gradle/libs.versions.toml`); JUnit4 as the test runner; `kotlin.test` for assertions;
+`kotlinx-coroutines-test` plus Turbine for coroutine/`Flow` tests (added to a module once a test
+actually needs them); Robolectric only where a test genuinely cannot avoid the Android framework;
+androidx.test for instrumented critical paths; no mocking library (hand-written fakes of the domain
+provider interfaces instead); ktlint and detekt, both blocking, run via `./gradlew ktlintCheck
+detekt`.
 
-**This does not mean a command is runnable today.** The Gradle project itself has not been
-scaffolded yet — no `build.gradle.kts`, no version catalog, no module has been created. Until that
-scaffolding exists (which depends on `adr/proposals/010-module-layout.md` for where source sets
-live, and `adr/proposals/001-ui-toolkit.md` for what an instrumented/UI test targets), there is no
-real `./gradlew test` or equivalent command to run. Do not assume one works or paste a fabricated
-command as evidence — verify against the actual project state before citing any command as
-evidence in a PR (`CLAUDE.md` §8: evidence before assertions). CI's own execution of "all tests" is
-additionally pending `adr/proposals/011-ci-reproducible-build-fdroid.md`.
+**Real, runnable commands today:**
+
+```
+./gradlew :domain:test        # domain unit tests — plain JVM, no Android SDK needed
+./gradlew :domain:build        # domain compile + test + ktlint + detekt
+./gradlew ktlintCheck detekt   # static analysis, both modules
+```
+
+`:domain` builds and tests with no Android SDK installed at all — that is the point of
+`docs/adr/010-module-layout.md`. `:app` (the Android application module) additionally needs an
+Android SDK on the machine (`ANDROID_HOME`/`local.properties`) to configure and build; it has no
+Kotlin source yet (Stage G presentation tests are gated on `adr/proposals/001-ui-toolkit.md`).
+CI's own execution of "all tests" is pending `adr/proposals/011-ci-reproducible-build-fdroid.md` —
+the commands above are what a human or an agent runs locally today; nothing yet runs them
+automatically on every push.
 
 ---
 
 ## Pending tooling decisions
 
-The build system and test-runner/assertion/mocking tooling are decided
-(`docs/adr/012-build-and-test-tooling.md`, see §8). What remains open, tracked as ADR proposals,
-not decided here:
+The build system, test-runner/assertion/mocking tooling, and module layout are decided
+(`docs/adr/012-build-and-test-tooling.md`, `docs/adr/010-module-layout.md`, see §8). What remains
+open, tracked as ADR proposals, not decided here:
 
 - `docs/adr/proposals/001-ui-toolkit.md` — affects what an instrumented/UI test targets.
-- `docs/adr/proposals/010-module-layout.md` — affects where domain/data/presentation test source
-  sets live.
 - `docs/adr/proposals/011-ci-reproducible-build-fdroid.md` — affects how "all tests" are run in
   CI and what reproducibility verification looks like.
 

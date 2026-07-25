@@ -28,8 +28,8 @@ concrete requirement the module structure must enforce, not just a claim.
 
 ## 2. Layers
 
-Three layers, per `CLAUDE.md` §4. The names are responsibilities, not yet a package layout (§8
-below is the provisional mapping onto modules/packages).
+Three layers, per `CLAUDE.md` §4. The names are responsibilities; §8 below is the decided mapping
+onto Gradle modules/packages.
 
 ### 2.1 `domain` — pure Kotlin, zero Android imports
 
@@ -136,14 +136,13 @@ given provider needs. `presentation` depends on `domain` (use cases, types) and 
 concrete `data` implementation only at the composition root (wherever dependency injection is
 assembled) — `presentation` code never imports a `data` class directly.
 
-**Enforcement**: this is a review-gate invariant, not an aspiration. `reviewer-opus` (per
-`CLAUDE.md` §2 Step 4) checks, for every changed file: does anything under `domain/` import
-`android.*`, a third-party SDK, or a `data`/`presentation` type? Does `presentation/` import a
-`data` implementation class directly instead of a `domain` interface? Either is a blocker finding.
-A build-time check (module boundaries, or lint rule, or separate Gradle modules — module layout
-is itself open, see [`../adr/proposals/010-module-layout.md`](../adr/proposals/010-module-layout.md))
-is the long-term goal; until it exists, review is the enforcement mechanism and must not be
-skipped or waived.
+**Enforcement**: the `domain`/`android.*` half of this invariant is now a build-time, structural
+guarantee, not only a review-gate one — [`../adr/010-module-layout.md`](../adr/010-module-layout.md)
+puts `domain` in its own Gradle module with no Android Gradle Plugin applied, so an `android.*`
+import there is a compile error. The `presentation`-must-not-import-`data`-directly half of this
+invariant is not yet structurally enforced (both currently live inside `:app`); `reviewer-opus` (per
+`CLAUDE.md` §2 Step 4) still checks it for every changed file until a further module split, if any,
+makes it structural too.
 
 ## 3. Provider abstraction: why it is a rule here specifically
 
@@ -281,48 +280,55 @@ has to be re-verified every time a provider is added or changed.
   behaviour. These are tested with instrumentation/integration tests or, where the technology
   choice permits, contract tests against a fake server — decided per-provider once the relevant
   ADRs land.
-- Whatever module layout is chosen (§8 below is provisional), it must keep `domain` in a module
-  with **no Android dependency at all** so its test suite is guaranteed to run as plain JVM tests,
-  not merely "tests that happen not to use Android APIs today."
+- The module layout (§8) keeps `domain` in a module with **no Android dependency at all**, so its
+  test suite is guaranteed to run as plain JVM tests, not merely "tests that happen not to use
+  Android APIs today."
 
-## 8. Module/package sketch — PROVISIONAL
+## 8. Module/package layout
 
-The following is illustrative only, to make the layer discussion concrete. The actual module
-layout (single module with package-level separation vs. multiple Gradle modules with enforced
-boundaries) is an open §0.2 decision — see
-[`../adr/proposals/010-module-layout.md`](../adr/proposals/010-module-layout.md). Nothing below is
-binding; do not treat package names as decided.
+The Gradle module boundary is decided:
+[`../adr/010-module-layout.md`](../adr/010-module-layout.md) (superseding
+[`../adr/proposals/010-module-layout.md`](../adr/proposals/010-module-layout.md)) fixes two Gradle
+modules, `:domain` (pure Kotlin/JVM, no Android Gradle Plugin, no Android dependency of any kind —
+`import android.*` is a compile error there) and `:app` (the Android application module, depending
+on `:domain`). This is a **structural**, not merely conventional, enforcement of §2.4's
+dependency-direction rule. The `data`/`presentation` package split inside `:app` below is still
+illustrative — those packages are not yet separate Gradle modules, and nothing below beyond the
+`domain`/`app` module boundary itself is binding.
 
 ```
-(provisional, illustrative only — see adr/proposals/010-module-layout.md)
-
-domain/
+domain/                               Gradle module :domain — pure Kotlin/JVM, no Android Gradle
+                                       Plugin, no Android dependency (docs/adr/010-module-layout.md)
   model/          Coordinate, Route, Place, Incident, Position, RelayConfiguration, domain errors
   usecase/        ResolveDestination, RequestRoute, LoadIncidentsForRoute, TrackOwnPosition, ...
   provider/       PlaceSearchProvider, RouteProvider, TrafficIncidentProvider,
                   TileProvider, OwnPositionSource, RouteCache, PlaceCache, RelaySettingsStore
 
-data/
-  traffic/        implements TrafficIncidentProvider; also owns its bounded on-disk response cache
-                  (decision D9, file-based, size/TTL-bounded LRU — see
-                  docs/specs/001-navigation-mvp.md FR-27–FR-31), consulted before any network fetch
-  tiles/          implements TileProvider; also owns the bounded on-disk tile cache (decision D7,
-                  file-based, size/TTL-bounded LRU — see docs/specs/001-navigation-mvp.md
-                  FR-27–FR-31), consulted before any network fetch
-  geocoding/      implements PlaceSearchProvider; also owns its bounded on-disk response cache
-                  (decision D9, same file-based/size/TTL/LRU standard as the tile cache — this is
-                  the most sensitive of the three caches, not a looser one), consulted before any
-                  network fetch
-  routing/        implements RouteProvider (on-device or remote — undecided)
-  location/       implements OwnPositionSource
-  persistence/    implements RouteCache / PlaceCache
-  settings/       implements RelaySettingsStore via Jetpack DataStore Preferences (decision D2,
-                  docs/adr/014-settings-persistence.md)
-  net/            the networking chokepoint (§4) — relay, coarsening where applicable, rate
-                  limiting, caching
+app/                                   Gradle module :app — the Android application module,
+                                        depending on :domain. Package split below is illustrative,
+                                        not yet separate Gradle modules.
+  data/
+    traffic/        implements TrafficIncidentProvider; also owns its bounded on-disk response
+                    cache (decision D9, file-based, size/TTL-bounded LRU — see
+                    docs/specs/001-navigation-mvp.md FR-27–FR-31), consulted before any network
+                    fetch
+    tiles/          implements TileProvider; also owns the bounded on-disk tile cache (decision
+                    D7, file-based, size/TTL-bounded LRU — see docs/specs/001-navigation-mvp.md
+                    FR-27–FR-31), consulted before any network fetch
+    geocoding/      implements PlaceSearchProvider; also owns its bounded on-disk response cache
+                    (decision D9, same file-based/size/TTL/LRU standard as the tile cache — this is
+                    the most sensitive of the three caches, not a looser one), consulted before any
+                    network fetch
+    routing/        implements RouteProvider (on-device or remote — undecided)
+    location/       implements OwnPositionSource
+    persistence/    implements RouteCache / PlaceCache
+    settings/       implements RelaySettingsStore via Jetpack DataStore Preferences (decision D2,
+                    docs/adr/014-settings-persistence.md)
+    net/            the networking chokepoint (§4) — relay, coarsening where applicable, rate
+                    limiting, caching
 
-presentation/
-  <feature>/      screen state holders, view-model-equivalents, rendering
+  presentation/
+    <feature>/      screen state holders, view-model-equivalents, rendering
 ```
 
 ## 9. Undecided, and where the decision lands
@@ -338,8 +344,9 @@ presentation/
 | Relay/proxy implementation (Tor, HTTP/SOCKS proxy, self-hosted instance) | networking chokepoint exclusively | Every provider implementation and all of `domain`/`presentation` — a provider never knows or cares whether a relay is active. |
 | Local persistence for `RouteCache`/`PlaceCache` (Room vs SQLDelight vs plain SQLite — ADR 008) | `data` (persistence implementations of these cache ports) | `domain`'s cache port interfaces; nothing above `data` reads a database row type. **Decided separately**: `RelaySettingsStore` is not part of this open decision — it is settled as Jetpack DataStore Preferences from v0.1 (decision D2, recorded as `docs/adr/014-settings-persistence.md`) precisely so it does not wait on ADR 008, which keeps ownership of the `RouteCache`/`PlaceCache` question only. The v0.1 on-disk tile cache (decision D7) is likewise not part of this open decision: it is a file-based store (see `docs/specs/001-navigation-mvp.md` FR-27–FR-31), not a structured-database question. |
 | Foreground-service and location strategy (v0.2) | `data` (location source) + a v0.2 service component | `domain`'s `OwnPositionSource` interface and use cases consuming `Position`. |
-| Module layout (single module vs multi-module) | build structure, all layers' packaging | The layer responsibilities and dependency direction in §2–§3, which hold regardless of how they are packaged. |
 | CI, reproducible build and F-Droid pipeline | build tooling only | All runtime layers — this is a build-time concern with no runtime architectural coupling. |
 
 Each row's ADR is written when a task first needs that decision, per `CLAUDE.md` §0.2; none of
 them may be settled implicitly by this document or by writing code against a specific candidate.
+**Module layout is no longer part of this table**: it is decided, see §8 and
+[`../adr/010-module-layout.md`](../adr/010-module-layout.md).
