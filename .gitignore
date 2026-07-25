@@ -25,3 +25,14 @@ replay_pid*
 
 # Kotlin Gradle plugin data, see https://kotlinlang.org/docs/whatsnew20.html#new-directory-for-kotlin-data-in-gradle-projects
 .kotlin/
+
+# Gradle
+.gradle/
+build/
+local.properties
+
+# Deliberate, flagged exception to the blanket *.jar rule above and to CLAUDE.md §10.10
+# (no committed binaries): the Gradle wrapper jar is standard practice and is required for a
+# reproducible build without relying on a pre-installed Gradle on the machine that checks it out.
+# See docs/adr/012-build-and-test-tooling.md and this project's build-skeleton PR body.
+!gradle/wrapper/gradle-wrapper.jar
