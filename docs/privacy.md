@@ -229,7 +229,7 @@ addable later without touching `domain` or `presentation`.
 |---|---|
 | Sent over network | Nothing directly. Raw GPS fixes never leave the device |
 | On-device handling | Read from the OS location API, foreground only. v0.1: a low-frequency fix to place a "you are here" marker. v0.2: continuous fixes during active guidance, via a foreground service (see permissions below) |
-| Derived exposure | The current position, coarsened, becomes: the origin parameter of a routing request (flow d — at full precision if a remote shape is chosen, since routing cannot use a coarsened origin without degrading results); a factor in the viewport sent to the tile/traffic providers when the map is centred on the user; a bias parameter for geocoding autocomplete (flow c) |
+| Derived exposure | The current position, coarsened, becomes: the origin parameter of a routing request (flow d — at full precision, decision D11, since routing cannot use a coarsened origin without degrading results); a factor in the viewport sent to the tile/traffic providers when the map is centred on the user; a bias parameter for geocoding autocomplete (flow c) |
 | Precision requested from the OS | Should be the coarsest accuracy that satisfies the active feature (e.g. not requesting the finest available fix when a coarser one suffices) — this is an implementation choice for the developer spec, flagged here as a review item, not yet a fixed value |
 | Local storage | Not persisted beyond the current session/trip. No location history is built in v0.1–v0.3. A "trip history" feature is out of scope until v0.4+ and, if ever proposed, is opt-in, explicit, and independently deletable |
 | Mitigation | Foreground-only permission, never background; fixes held in memory, not written to disk; coarsened before being handed to any outbound flow that can tolerate coarsening |
@@ -242,7 +242,8 @@ reading the code, not by trusting a claim:
 1. **User-selectable relay applied to every outbound request by construction, with an explicit
    choice required and a fail-closed failure mode (decision D1).** The networking layer has a
    single egress point (or a small, enumerable set of them) through which all HTTP traffic to tile,
-   traffic, geocoding, and — if a remote shape is chosen — routing providers is routed. There must
+   traffic, geocoding, and routing (Waze/Google, decision D11 — remote and certain, not conditional)
+   providers is routed. There must
    be no code path that constructs a network client bypassing that egress point. A code reviewer
    should be able to grep for HTTP client construction and find exactly the sanctioned
    factory/factories, nowhere else. The domain's `RelayConfiguration` has no "unset means direct"

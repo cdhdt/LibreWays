@@ -197,8 +197,8 @@ implementation is a `data`-layer plug-in behind it.
 
 **Every outbound network request the app makes passes through exactly one path.** Concretely:
 there is a single component in `data` responsible for issuing HTTP(S) requests; every provider
-implementation (traffic, tiles, geocoding, and routing if the chosen shape is remote) calls into
-it rather than opening its own connection.
+implementation (traffic, tiles, geocoding, and routing — Waze/Google, decision D11, remote and
+certain from v0.1) calls into it rather than opening its own connection.
 
 This exists because `CLAUDE.md` §5.1 requires the user-selectable relay, coordinate coarsening,
 rate limiting and response caching to be applied **in exactly one place** — a policy scattered
