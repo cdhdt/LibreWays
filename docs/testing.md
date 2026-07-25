@@ -252,6 +252,19 @@ CI's own execution of "all tests" is pending `adr/proposals/011-ci-reproducible-
 the commands above are what a human or an agent runs locally today; nothing yet runs them
 automatically on every push.
 
+**JDK requirement.** Building requires a **JDK 21 installation already present on the machine**
+(both `:domain` and `:app` declare `21` as their required JVM target). Gradle's toolchain
+auto-download is deliberately disabled (`org.gradle.java.installations.auto-download=false` in
+`gradle.properties`) — this project does not silently fetch and execute a JDK from a third-party
+toolchain resolver, only ever detects one already installed locally. If Gradle cannot find a JDK 21
+among its known installation locations, either install one (e.g. Temurin 21) or point
+`org.gradle.java.installations.paths` at it, and the build will pick it up without a download. This
+requirement exists independently of whatever JDK happens to be the machine's default `java`: detekt
+1.23.8's bundled compiler frontend does not parse very new JDK version strings (verified against
+JDK 25 while building this project), so a default `java` newer than JDK 21 will make `detekt` fail
+outright even though `:domain:test` and `:domain:build` otherwise succeed — see the build-skeleton
+PR body for the exact error and the verification that was actually run.
+
 ---
 
 ## Pending tooling decisions

@@ -37,6 +37,13 @@ android {
             isMinifyEnabled = false
         }
     }
+
+    compileOptions {
+        // Explicit, matching :domain's jvmToolchain(21) — a build-tooling constraint (see
+        // gradle.properties on why auto-download is disabled), not a product decision.
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
 }
 
 dependencies {

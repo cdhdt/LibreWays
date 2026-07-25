@@ -9,7 +9,9 @@ plugins {
 
 kotlin {
     // Pinned to a level detekt's embedded compiler accepts — a build-tooling constraint, not a
-    // product decision; unrelated to any §0.2 open decision. See settings.gradle.kts.
+    // product decision; unrelated to any §0.2 open decision. Requires a JDK 21 installation on
+    // the machine running this build (auto-download is disabled, see gradle.properties) — see
+    // docs/testing.md for where to get one.
     jvmToolchain(21)
 }
 
