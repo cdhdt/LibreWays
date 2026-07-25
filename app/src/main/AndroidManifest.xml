@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Deliberately minimal. No activity, no permission, no UI toolkit dependency: ADR 001 (UI
+    toolkit) is still open, so nothing here presumes Compose, Views, or any navigation library.
+    allowBackup is set to false explicitly (CLAUDE.md §5: "allowBackup and data-extraction rules
+    are explicit choices, not defaults") as the conservative starting point; it is revisited with
+    a considered per-path rule once real persistence (FR-24, FR-27-31) lands.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name" />
+
+</manifest>

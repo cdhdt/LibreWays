@@ -1,0 +1,33 @@
+[versions]
+# Build tools
+kotlin = "2.4.10"
+android-gradle-plugin = "9.3.1"
+
+# Static analysis (ADR 012 — blocking in CI)
+ktlint-gradle = "14.2.0"
+detekt = "1.23.8"
+
+# Test tooling (ADR 012)
+junit4 = "4.13.2"
+kotlinx-coroutines = "1.11.0"
+turbine = "1.2.1"
+robolectric = "4.17-beta-2"
+
+# Android compile/target (no UI toolkit dependency — ADR 001 is still open)
+compile-sdk = "37"
+min-sdk = "26"
+target-sdk = "37"
+
+[libraries]
+junit4 = { module = "junit:junit", version.ref = "junit4" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "android-gradle-plugin" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-gradle" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

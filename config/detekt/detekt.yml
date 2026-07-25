@@ -1,0 +1,8 @@
+# Project-specific detekt config, layered on top of detekt's own default ruleset
+# (buildUponDefaultConfig = true in each module's build.gradle.kts). No rule is disabled here —
+# CLAUDE.md §10.8 forbids weakening a lint rule to reach green; a finding is fixed in the code or
+# escalated, never silenced here. This file exists so detekt has a stable, committed config to
+# layer on top of, per ADR 012.
+
+config:
+  validation: true
