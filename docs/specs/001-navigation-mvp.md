@@ -147,6 +147,10 @@ the route, updating while the map screen is visible.
   none of which is presented to the user as a history.
 - Any settings screen beyond destination entry, the map, the relay setting, and the response-cache
   clear action(s) (FR-30).
+- Authenticated proxy support (a username/password field on the relay's proxy/self-hosted modes) —
+  decision D19, `docs/adr/007-relay-and-proxy.md`. `RelayConfiguration`'s proxy and self-hosted
+  modes carry host and port only in v0.1; a user needing an authenticated upstream proxy runs a
+  local, unauthenticated listener in front of it instead. Revisable like any accepted decision.
 
 ## Functional requirements
 
@@ -312,7 +316,8 @@ every other concrete choice below; what each concretely requires is specified un
   current location: a `Coordinate` + accuracy + capture time, distinct from `Place`),
   `RelayConfiguration` (a distinct `NotChosen` state — egress-blocking, never treated as equivalent
   to any selectable mode — plus the four selectable modes: direct/no-relay, Tor, proxy,
-  self-hosted, each with mode-specific endpoint data).
+  self-hosted, each with mode-specific endpoint data — host and port only for proxy/self-hosted in
+  v0.1, no credential field, decision D19, `docs/adr/007-relay-and-proxy.md`).
 - **Repository interfaces (ports)**, implemented by `data`: `PlaceSearchProvider`
   (`search(text) -> candidates or a typed error`), `RouteProvider` (`route(origin, destination)
   -> Route or a typed error`, traffic-aware; **signature unchanged by decision D11** — only
@@ -869,7 +874,13 @@ serialisation, and relay-transport mechanism the tests above (36, 37, 40, 43, 46
 116) already exercise at the per-adapter/per-behaviour level; these four tests verify the
 architectural invariants those two ADRs add on top — that the chokepoint is a single, enforced
 instance, and that the relay does not leak the destination host or reuse a connection across a
-setting change — none of which the existing tests above assert directly.
+setting change — none of which the existing tests above assert directly. Tests 125 and 126
+specifically are written against **in-process fakes substituted at the HTTP client's own pluggable
+seams** (a recording `Dns`, a recording `SocketFactory`, a fake connection-pool collaborator) rather
+than any real socket, real proxy, or `localhost` stand-in — this is what keeps them compliant with
+`docs/testing.md` §4's no-real-network-call rule while still verifying the transport-level property
+that rule exists to protect (see `docs/testing.md` §5 for why this is the correct boundary, not an
+exception carved into it).
 
 123. Exactly one `OkHttpClient` instance is constructed for the whole app; a test asserts that every
      network-backed provider adapter (geocoding, routing, traffic, tiles) is wired to that same
@@ -883,18 +894,26 @@ setting change — none of which the existing tests above assert directly.
      per-adapter defensive-parsing tests 102 and 114, which cover this at the adapter level for
      specific sources only.
 125. **Blocking test — a prerequisite of the relay implementation, not a follow-up (FR-42, decision
-     D18).** With a relay configured (HTTP or SOCKS5) and a fake DNS resolver instrumented to record
-     every lookup performed outside the configured proxy, issuing a request through any of the four
-     provider adapters resolves the destination host through the proxy only: the instrumented
-     resolver records zero lookups for that host. This test must exist and pass before the relay may
-     be described as working in any document or in the app's UI; if it cannot be made to pass with
-     this app's stack, that is an escalation to the maintainer that reopens decision D18, not a
-     workaround.
-126. Issuing a request, then changing the relay setting (including switching to a different mode or
-     to "direct, no relay"), then issuing a second request: the second request does not reuse a
-     pooled connection established under the prior relay setting, verified via the fake proxy/
-     destination listeners recording a new connection rather than a reused one (FR-43, decision
-     D18).
+     D18).** With the chokepoint's `OkHttpClient` built with a configured proxy (HTTP or SOCKS5) and
+     two in-process fakes substituted at the client's own pluggable seams — a recording `Dns`
+     implementation standing in for the system resolver, and a recording `SocketFactory` that
+     captures the `SocketAddress` handed to it and fails the connection immediately afterward, so no
+     real socket ever completes a handshake — issuing a request through any of the four provider
+     adapters: the recording `Dns` is never invoked for the destination host, and the address the
+     `SocketFactory` receives for that host is unresolved (a hostname, not a pre-resolved IP),
+     proving the destination host reaches the proxy hop without being looked up locally first. This
+     test must exist and pass before the relay may be described as working in any document or in the
+     app's UI; if it cannot be made to pass with this app's stack, that is an escalation to the
+     maintainer that reopens decision D18, not a workaround.
+126. Given the chokepoint constructed with a fake/spy stand-in for its `OkHttpClient`'s
+     connection-pool-management collaborator, changing the active `RelayConfiguration` triggers an
+     explicit pool-eviction (or full client-rebuild) call before the next request is issued —
+     asserted as an interaction with the injected fake, not by opening any real connection. This is
+     what prevents a connection pooled under a prior relay setting from being reused after the
+     setting changes (FR-43, decision D18): OkHttp's own connection pool is keyed by `Address`, which
+     includes the proxy, but that guarantee only holds if the chokepoint actually gives the client a
+     fresh pool or evicts the old one on a setting change — the property this test verifies directly,
+     rather than assuming it from general knowledge of the library.
 
 ## Definition of Done
 
@@ -960,8 +979,9 @@ setting change — none of which the existing tests above assert directly.
       response (FR-41, decision D17).
 - [ ] **Test 125 passes — blocking, not optional.** No DNS query for a request's host leaves the
       device outside the configured proxy (FR-42, decision D18). Until this test exists and passes,
-      the relay must not be described as working, in this document, `docs/privacy.md`, or the app's
-      UI; a failure to make it pass is escalated to the maintainer, per the relay transport ADR
+      the relay must not be described as working, in this or any other document (including
+      `docs/threat-model.md`) or the app's UI; a failure to make it pass is escalated to the
+      maintainer, per the relay transport ADR
       ([`../adr/007-relay-and-proxy.md`](../adr/007-relay-and-proxy.md)), not worked around.
 - [ ] Test 126 passes: no connection pooled under a prior relay setting is reused after the relay
       setting changes (FR-43, decision D18).
@@ -1042,7 +1062,8 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
   gated by no ADR, per the paragraph above.
 - The tile-cache adapter tests (49–52), the geocoding-cache adapter tests (76–79), and the
   traffic-cache adapter tests (81–84), each against a fake of the port it wraps and file-based
-  storage — independent of every pending map/tile/HTTP/persistence ADR (see above). Tests 53, 80,
+  storage — independent of every pending map/tile/persistence ADR (see above; the HTTP stack is no
+  longer pending). Tests 53, 80,
   and 85 (the backup-exclusion test for each cache) can also start now in the sense that they need
   no pending ADR either, but they do need Robolectric and a real or Robolectric-provided `Context`
   to resolve `getNoBackupFilesDir()` — they are not fake-only the way the rest of this cluster is.
@@ -1135,10 +1156,14 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
   so no re-baselining was needed.
 - **OQ4 — human decision required.** Does v0.1 show more than one route alternative, or exactly
   one? The brief says "a route," singular; this spec assumes exactly one.
-- **OQ5 — human decision required.** Must the relay setting expose the full mode set (direct/no
-  relay / Tor / proxy / self-hosted) in v0.1's UI, or only a binary on/off with the concrete mode
-  fixed elsewhere? This spec assumes the full set, per the brief's description of the relay as a
-  first-class requirement, deferring only the concrete transport (007).
+- **OQ5 — human decision required.** The relay **transport** itself is decided (decision D18,
+  `docs/adr/007-relay-and-proxy.md`: a single user-configured HTTP or SOCKS5 proxy, covering Tor via
+  Orbot, a generic proxy, and a self-hosted instance) — not reopened here. What remains open is
+  purely a **settings-UI presentation** question: must the relay setting expose the full mode set
+  (direct/no relay / Tor / proxy / self-hosted) as equally-weighted choices in v0.1's UI, or is one
+  mode (e.g. Tor) presented as a suggested default with the others reachable as secondary options?
+  This spec assumes the full, equally-weighted set, per the brief's description of the relay as a
+  first-class requirement — an assumption pending this UI-presentation decision, not a settled fact.
 - **OQ6 — human decision required.** Confirm that the only persistence beyond process lifetime is
   the relay setting and the three bounded, short-TTL response caches (FR-18) — with no user-facing
   "recent destination"/history convenience of any kind — is the intended scope, per decision D9,
@@ -1158,9 +1183,14 @@ question here), whether local response caching for geocoding/traffic is permitte
 by D9 — it is; only the figures in OQ7 remain open), the traffic/incident source and its integration
 architecture (resolved by D10/D12/D13/D14/D15, recorded as `docs/adr/005-traffic-source-
 integration.md`), the routing engine (resolved by D11, recorded as `docs/adr/003-routing-engine.md`
-— the costs accepted are recorded there and in `docs/roadmap.md`, not hidden), and OQ3 above. See
-the maintainer's decision record for the full reasoning; D5 and the round-2/round-3 decision records
-list what is still genuinely open beyond OQ1, OQ2, OQ4–OQ7 above.
+— the costs accepted are recorded there and in `docs/roadmap.md`, not hidden), the HTTP
+client/serialisation stack (resolved by D17, recorded as `docs/adr/006-http-and-serialisation.md`),
+the relay transport mechanism itself (resolved by D18, recorded as
+`docs/adr/007-relay-and-proxy.md` — the settings-UI presentation question is distinct and remains
+open as OQ5), whether authenticated proxies are supported in v0.1 (resolved by D19 — they are not;
+see `docs/adr/007-relay-and-proxy.md`), and OQ3 above. See the maintainer's decision record for the
+full reasoning; D5 and the round-2/round-3 decision records list what is still genuinely open beyond
+OQ1, OQ2, OQ4–OQ7 above.
 
 **Known gap, not a decision to make — tracked so it is not mistaken for an oversight:** no
 accessibility or string-resource inventory exists yet anywhere in this project. This spec's
