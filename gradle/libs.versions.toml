@@ -12,11 +12,11 @@ junit4 = "4.13.2"
 
 # Android compile/target (no UI toolkit dependency — ADR 001 is still open).
 # 36 is the latest *released, stable, plain-integer* platform verified against Google's SDK
-# repository manifest at the time of writing — 37 exists only as fractional/preview packages
-# (android-37.0, android-37.1, android-37.2-beta1), none of them a plain "android-37" AGP can
-# resolve compileSdk = 37 against. minSdk 26 (Android 8.0) is decision D-minsdk, recorded in
-# docs/adr/010-module-layout.md: it covers the large majority of active devices while this
-# project's target audience runs recent hardware.
+# repository manifest at the time of writing — no plain "android-37" package exists there at all,
+# only fractional/preview ones (android-37.0, android-37.1, android-37.2-beta1); see
+# docs/adr/010-module-layout.md's addendum for exactly what was and was not verified. minSdk 26
+# (Android 8.0) is decision D-minsdk, recorded in the same addendum: it covers the large majority
+# of active devices while this project's target audience runs recent hardware.
 compile-sdk = "36"
 min-sdk = "26"
 target-sdk = "36"

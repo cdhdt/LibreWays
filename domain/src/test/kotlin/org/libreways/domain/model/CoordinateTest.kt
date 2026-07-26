@@ -56,9 +56,9 @@ class CoordinateTest {
 
     @Test
     fun `accepts a longitude within range`() {
-        val coordinate = Coordinate(latitude = 0.0, longitude = 90.0)
+        val coordinate = Coordinate(latitude = 0.0, longitude = 120.0)
 
-        assertEquals(90.0, coordinate.longitude)
+        assertEquals(120.0, coordinate.longitude)
     }
 
     @Test

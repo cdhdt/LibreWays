@@ -127,9 +127,10 @@ version-catalog entries.
   (`https://dl.google.com/android/repository/repository2-3.xml`) at the time of this addendum: no
   plain `platforms;android-37` package exists — only fractional/preview packages
   (`android-37.0`, `android-37.1`, both stable-channel but fractional; `android-37.2-beta1`, a named
-  preview with codename `CinnamonBun`). AGP's `compileSdk` is a plain integer and resolves against a
-  plain `android-<int>` platform package; `37` would have failed to resolve on any machine that
-  actually has the SDK installed, which is exactly why the mistake was invisible in an environment
-  with no SDK at all. The latest **released, stable, plain-integer** platform verified in that
-  manifest is `platforms;android-36` (`channelRef` `channel-0`, i.e. stable; no codename). Both
-  `compileSdk` and `targetSdk` are corrected to `36`.
+  preview with codename `CinnamonBun`). This is what was actually established, stated as such rather
+  than as a claim about what AGP would do with it: no environment with a real Android SDK installed
+  was available to confirm the resolution failure directly, only that the plain package `37` names
+  is simply absent from the manifest that provisions it. The latest **released, stable,
+  plain-integer** platform verified in that manifest is `platforms;android-36` (`channelRef`
+  `channel-0`, i.e. stable; no codename). Both `compileSdk` and `targetSdk` are corrected to `36`,
+  the verified value, rather than left on the unverified one.

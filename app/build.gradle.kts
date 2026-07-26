@@ -10,8 +10,10 @@ plugins {
 
 android {
     // "com.example.libreways" is a deliberate placeholder, not a decision: the application id is
-    // an open question (CLAUDE.md §0.2) the human has not yet settled, and it is effectively
-    // permanent once published. Replace it before any real release; see the PR body.
+    // an open question the human has not yet settled (docs/adr/proposals/010-module-layout.md's
+    // own "Concrete proposed layout per option" section flags it explicitly, separate from the
+    // module-layout decision itself), and it is effectively permanent once published. Replace it
+    // before any real release; see the PR body.
     namespace = "com.example.libreways"
     compileSdk =
         libs.versions.compile.sdk
