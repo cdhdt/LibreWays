@@ -40,8 +40,9 @@ serialisation stack is OkHttp plus kotlinx.serialization; recorded as
 chokepoint test and test 124's unknown-fields-ignored test verify, appended below). **D18** (the
 relay transport is a single generic user-configured HTTP or SOCKS5 proxy; recorded as
 `docs/adr/007-relay-and-proxy.md`, `accepted` — carrying a blocking requirement that the relay must
-not be described as working until test 125 proves no DNS resolution for a request's host happens
-outside the configured proxy; test 126 covers the accompanying no-connection-reuse-across-a-relay-
+not be described as working until the **instrumented** test 127 proves no DNS resolution for a
+request's host escapes the configured proxy; test 125 verifies OkHttp's own client-level behaviour,
+necessary but not sufficient for that claim; test 126 covers the connection-reuse-across-a-relay-
 change requirement). D5 lists what remains genuinely open and is not touched here.
 
 ## Goal and user story
@@ -95,8 +96,9 @@ the route, updating while the map screen is visible.
   D2). The concrete transport — a single user-configured HTTP or SOCKS5 proxy, covering Tor via
   Orbot, a generic proxy, and a self-hosted instance — is decided (decision D18,
   [`007-relay-and-proxy.md`](../adr/007-relay-and-proxy.md)), carrying the blocking DNS-leak
-  verification FR-42 and test 125 require before it may be described as working; this spec
-  requires that the setting exists, blocks egress until chosen, applies uniformly, and persists.
+  verification FR-42 requires — an instrumented, device-level test (127), not the complementary
+  client-level unit test (125) alone — before it may be described as working; this spec requires
+  that the setting exists, blocks egress until chosen, applies uniformly, and persists.
 - Graceful behaviour when: a provider (geocoding, routing, traffic, or tiles) is unreachable
   (`ProviderUnreachable`), no relay choice has been made yet (`RelayNotChosen`), or a *configured*
   relay is unreachable (`RelayUnreachable`, fail-closed — the request fails, never a silent direct
@@ -199,7 +201,7 @@ Numbered, testable, one behaviour each.
 | FR-39 | No traffic or congested-segment request is issued on a timer, on a schedule, or otherwise without a direct, specific user action (opening the map, panning/zooming it, requesting a route) that needs that area's data right now (decision D12). This is distinct from, and in addition to, FR-35's minimum-interval floor and FR-36's coalescing: FR-39 is about what triggers a request at all, the other two are about how requests already triggered are spaced and merged. |
 | FR-40 | Exactly one `OkHttpClient` instance exists for the whole app; every network-backed `data`-layer provider adapter (geocoding, routing, traffic, tiles) is constructor-injected with that same instance rather than constructing its own (decision D17, `docs/adr/006-http-and-serialisation.md`). |
 | FR-41 | A response payload carrying a field no adapter's mapping recognises does not cause the whole response to be rejected: the shared JSON deserialiser ignores unknown keys, and only a structurally malformed payload (one missing a required field no fallback covers) maps to a typed provider error (decision D17). This generalises, at the shared-serialiser level, the per-adapter defensive-parsing behaviour tests 102 and 114 already verify for specific sources. |
-| FR-42 | **Blocking.** The relay may not be described as protecting the user's destination from their local network — in `docs/privacy.md`, any other document, or the app's UI — until an instrumented test demonstrates that no DNS query for a request's host leaves the device outside the configured proxy. This test is a prerequisite of the relay implementation, not a follow-up (decision D18, `docs/adr/007-relay-and-proxy.md`); if verification shows local resolution cannot be prevented with this app's stack, that is an escalation to the maintainer which reopens decision D18. |
+| FR-42 | **Blocking.** The relay may not be described as protecting the user's destination from their local network — in `docs/privacy.md`, any other document, or the app's UI — until an **instrumented** test (test 127, on a real or emulated device) demonstrates that no DNS query for a request's host leaves the device outside the configured proxy. A complementary unit test (test 125) verifies OkHttp's own client-level behaviour — no lookup through its own resolver; the SOCKS route's socket address stays unresolved — but is necessary, not sufficient, since the actual name-resolution path runs in the platform's own socket/SOCKS implementation, below any seam test 125 can reach; test 125 alone must never be read as satisfying this requirement. Test 127 is the prerequisite of the relay implementation, not a follow-up (decision D18, `docs/adr/007-relay-and-proxy.md`); if verification shows local resolution cannot be prevented with this app's stack, that is an escalation to the maintainer which reopens decision D18. |
 | FR-43 | No pooled or keep-alive connection established under a prior relay configuration is reused for a request issued after the relay configuration changes (decision D18). |
 
 ## Non-functional requirements
@@ -291,7 +293,7 @@ likewise decided (decision D17, `docs/adr/006-http-and-serialisation.md`: OkHttp
 and its relay transport is decided (decision D18, `docs/adr/007-relay-and-proxy.md`: a single
 user-configured HTTP/SOCKS5 proxy) — neither name reaches `domain` or `presentation`, exactly like
 every other concrete choice below; what each concretely requires is specified under
-[Prerequisites](#prerequisites) and tests 123–126.
+[Prerequisites](#prerequisites) and tests 123–127.
 
 ### Domain (pure Kotlin, zero Android imports)
 
@@ -434,7 +436,7 @@ every other concrete choice below; what each concretely requires is specified un
 
 ## TDD test list
 
-Ordered; each test is the next smallest failing step. 126 tests total: 1–75 from the base feature,
+Ordered; each test is the next smallest failing step. 127 tests total: 1–75 from the base feature,
 76–87 appended for decision D9 (the geocoding/traffic response caches) and for two
 presentation-layer gaps a later review found (the `RelayUnreachable` UI state and the cache-clear
 settings affordance), 88–117 appended for decisions D10–D16 (Waze-backed routing and traffic
@@ -443,12 +445,14 @@ and its new use case, the traffic/jam and routing adapters, the five-minute poli
 area-coalescing, and attribution), 118–120 appended for a review-found gap (FR-32–FR-34's display
 requirements had no Stage G test), 121 appended for a second review-found gap (FR-39's
 no-automatic-polling rule had no test), 122 appended for a third review-found gap (FR-37's
-region-mismatch rule had no test for the routing flow, only the traffic/jam flow), and 123–126
+region-mismatch rule had no test for the routing flow, only the traffic/jam flow), 123–126
 appended for decisions D17–D18 (the HTTP-client/serialisation chokepoint enforcement and the
 relay's DNS-leak/connection-reuse verification, `docs/adr/006-http-and-serialisation.md` and
-`docs/adr/007-relay-and-proxy.md`) — appended rather than inserted, so no test 1–122 was
-renumbered. Test 6 is corrected in place (see the note under
-it) without changing its number. Tests in
+`docs/adr/007-relay-and-proxy.md`), and 127 appended for a review-found gap in that same block: the
+DNS-leak property does not reduce to one in-process test, and needs a device-level instrumented
+test alongside test 125's client-level check — appended rather than inserted, so no test 1–126 was
+renumbered. Tests 6, 125, and 126 are each corrected in place (see the notes under them) without
+changing their numbers. Tests in
 Stages A–E use hand-written fakes of the domain ports above and are independent of every undecided
 library. Stages F and G name the component under test generically ("the injected client/HTTP
 port") precisely so they do not assume a library choice; when an ADR is resolved, the concrete
@@ -871,16 +875,25 @@ block above: every existing cross-reference to tests 1–122 elsewhere in this d
 `docs/testing.md`, and in the ADR proposals stays valid. `docs/adr/006-http-and-serialisation.md`
 (decision D17) and `docs/adr/007-relay-and-proxy.md` (decision D18) settle the HTTP client,
 serialisation, and relay-transport mechanism the tests above (36, 37, 40, 43, 46, 47, 57, 58, 109,
-116) already exercise at the per-adapter/per-behaviour level; these four tests verify the
+116) already exercise at the per-adapter/per-behaviour level; these five tests verify the
 architectural invariants those two ADRs add on top — that the chokepoint is a single, enforced
-instance, and that the relay does not leak the destination host or reuse a connection across a
-setting change — none of which the existing tests above assert directly. Tests 125 and 126
-specifically are written against **in-process fakes substituted at the HTTP client's own pluggable
-seams** (a recording `Dns`, a recording `SocketFactory`, a fake connection-pool collaborator) rather
-than any real socket, real proxy, or `localhost` stand-in — this is what keeps them compliant with
-`docs/testing.md` §4's no-real-network-call rule while still verifying the transport-level property
-that rule exists to protect (see `docs/testing.md` §5 for why this is the correct boundary, not an
-exception carved into it).
+instance, that no name lookup for the destination host escapes the configured proxy, and that the
+relay does not reuse a connection across a setting change — none of which the existing tests above
+assert directly.
+
+**The DNS-leak property does not reduce to one test, and an earlier revision of this block was
+wrong to specify it as one.** Verified against OkHttp's own bytecode: with a SOCKS proxy configured
+— the only case in which the destination-DNS question exists — OkHttp never hands the destination
+address to a `SocketFactory` at all (it opens `new Socket(route.proxy)` directly on that path), so a
+recording `SocketFactory` observes nothing there; and the actual resolution risk lives below any
+seam OkHttp exposes, in the platform's own socket/SOCKS implementation, which no in-process fake can
+reach. Test 125 below is corrected in place to cover only what an in-process test legitimately can —
+OkHttp's own client-level construction, via a recording `okhttp3.EventListener` and a recording
+`Dns` — and test 127 is appended to cover the device-level property test 125 cannot reach, as the
+one instrumented exception to `docs/testing.md` §4's no-real-network rule (decision D18). Test 126
+is also corrected in place: its collaborator is restated as an app-owned abstraction the chokepoint
+injects, not a fake of OkHttp's own `ConnectionPool` (a `final` class ADR 012's no-mocking-library
+rule cannot substitute).
 
 123. Exactly one `OkHttpClient` instance is constructed for the whole app; a test asserts that every
      network-backed provider adapter (geocoding, routing, traffic, tiles) is wired to that same
@@ -893,27 +906,42 @@ exception carved into it).
      recognise rather than throwing (FR-41, decision D17) — a general regression guard beneath the
      per-adapter defensive-parsing tests 102 and 114, which cover this at the adapter level for
      specific sources only.
-125. **Blocking test — a prerequisite of the relay implementation, not a follow-up (FR-42, decision
-     D18).** With the chokepoint's `OkHttpClient` built with a configured proxy (HTTP or SOCKS5) and
-     two in-process fakes substituted at the client's own pluggable seams — a recording `Dns`
-     implementation standing in for the system resolver, and a recording `SocketFactory` that
-     captures the `SocketAddress` handed to it and fails the connection immediately afterward, so no
-     real socket ever completes a handshake — issuing a request through any of the four provider
-     adapters: the recording `Dns` is never invoked for the destination host, and the address the
-     `SocketFactory` receives for that host is unresolved (a hostname, not a pre-resolved IP),
-     proving the destination host reaches the proxy hop without being looked up locally first. This
-     test must exist and pass before the relay may be described as working in any document or in the
-     app's UI; if it cannot be made to pass with this app's stack, that is an escalation to the
-     maintainer that reopens decision D18, not a workaround.
-126. Given the chokepoint constructed with a fake/spy stand-in for its `OkHttpClient`'s
-     connection-pool-management collaborator, changing the active `RelayConfiguration` triggers an
-     explicit pool-eviction (or full client-rebuild) call before the next request is issued —
-     asserted as an interaction with the injected fake, not by opening any real connection. This is
-     what prevents a connection pooled under a prior relay setting from being reused after the
-     setting changes (FR-43, decision D18): OkHttp's own connection pool is keyed by `Address`, which
-     includes the proxy, but that guarantee only holds if the chokepoint actually gives the client a
-     fresh pool or evicts the old one on a setting change — the property this test verifies directly,
-     rather than assuming it from general knowledge of the library.
+125. **Client-level check — necessary, not sufficient for FR-42; corrected in place (decision
+     D18).** With the chokepoint's `OkHttpClient` built with a configured proxy (HTTP or SOCKS5), a
+     recording `okhttp3.EventListener` (using its `dnsStart`/`dnsEnd` and `connectStart` callbacks),
+     and a recording `Dns` implementation substituted for the system resolver as a belt-and-braces
+     guard, issuing a request through any of the four provider adapters with a SOCKS5 proxy
+     configured: the recording `Dns` is never invoked for the destination host, and the
+     `InetSocketAddress` the `connectStart` callback reports for that host is unresolved (a
+     hostname, not a pre-resolved IP) — proving OkHttp's own construction hands the destination
+     onward rather than resolving it through its own resolver first. **This test alone does not,
+     and must never be read to, satisfy FR-42.** The actual name-resolution path once a socket opens
+     runs in the platform's own socket/SOCKS implementation below this seam; see test 127 for the
+     device-level guarantee FR-42 actually requires.
+126. **Corrected in place: the collaborator is an app-owned abstraction, not a fake of OkHttp's own
+     type (decision D18).** Given the chokepoint constructed with a fake of its own
+     connection-pool-management collaborator — an interface the chokepoint depends on and injects,
+     which wraps the real, `final` `okhttp3.ConnectionPool.evictAll()` the app cannot itself fake or
+     mock (`docs/adr/012-build-and-test-tooling.md` bans mocking libraries) — changing the active
+     `RelayConfiguration` triggers a call to that fake's evict-or-rebuild method before the next
+     request is issued, asserted as an interaction with the injected fake, not by opening any real
+     connection. This is what prevents a connection pooled under a prior relay setting from being
+     reused after the setting changes (FR-43, decision D18): OkHttp's own connection pool is keyed
+     by `Address`, which includes the proxy, but that guarantee only holds if the chokepoint actually
+     evicts or rebuilds via this app-owned collaborator on a setting change — the property this test
+     verifies directly, rather than assuming it from general knowledge of the library.
+127. **Blocking test — instrumented, on a real or emulated device; the actual prerequisite of the
+     relay implementation FR-42 requires, not test 125 alone (decision D18).** With a relay
+     configured (HTTP or SOCKS5) pointed at a test-controlled proxy, and an instrumented
+     device-level resolver recording every name-lookup request the device makes, issuing a request
+     through any of the four provider adapters: the instrumented resolver records zero lookups for
+     the destination host outside the proxy connection. This is the one narrow, named exception to
+     `docs/testing.md` §4's no-real-network rule (see that section for why the rule exists and why
+     this specific property cannot be served by it) — sanctioned precisely because this property
+     lives in the platform's own socket/SOCKS implementation, below any in-process seam test 125
+     reaches. This test must exist and pass before the relay may be described as working in any
+     document or in the app's UI; if it cannot be made to pass with this app's stack, that is an
+     escalation to the maintainer that reopens decision D18, not a workaround.
 
 ## Definition of Done
 
@@ -977,14 +1005,18 @@ exception carved into it).
       provider adapter, with a test that fails if any adapter is found to bypass it (FR-40), and the
       shared JSON deserialiser ignores unknown fields rather than rejecting an otherwise-parseable
       response (FR-41, decision D17).
-- [ ] **Test 125 passes — blocking, not optional.** No DNS query for a request's host leaves the
-      device outside the configured proxy (FR-42, decision D18). Until this test exists and passes,
-      the relay must not be described as working, in this or any other document (including
-      `docs/threat-model.md`) or the app's UI; a failure to make it pass is escalated to the
-      maintainer, per the relay transport ADR
+- [ ] Test 125 passes: OkHttp's own client-level construction never resolves the destination host
+      through its own resolver, and the SOCKS route's socket address stays unresolved. **This is
+      necessary, not sufficient, for FR-42** — see test 127.
+- [ ] Test 126 passes: the chokepoint's app-owned connection-pool-management collaborator is told to
+      evict or rebuild whenever the relay setting changes, so no connection pooled under a prior
+      relay setting is reused after the setting changes (FR-43, decision D18).
+- [ ] **Test 127 passes — blocking, not optional; instrumented, on a real or emulated device.** No
+      DNS query for a request's host leaves the device outside the configured proxy (FR-42, decision
+      D18). Until this test exists and passes, the relay must not be described as working, in this
+      or any other document (including `docs/threat-model.md`) or the app's UI; a failure to make it
+      pass is escalated to the maintainer, per the relay transport ADR
       ([`../adr/007-relay-and-proxy.md`](../adr/007-relay-and-proxy.md)), not worked around.
-- [ ] Test 126 passes: no connection pooled under a prior relay setting is reused after the relay
-      setting changes (FR-43, decision D18).
 - [ ] No network call, location read, or map render occurs while the app is backgrounded or the
       screen is off (verified, not assumed).
 - [ ] No data is persisted beyond process lifetime except the relay setting (FR-24, via
@@ -1026,17 +1058,18 @@ exception carved into it).
 | [`004-geocoding-provider`](../adr/proposals/004-geocoding-provider.md) — `proposed` | The geocoding adapter and search screen wiring (tests 30–34, 36–37, 60–64) — test 35 (`RelaySettingsStore`) sits between 34 and 36 but does not need this ADR, see below |
 | [`005-traffic-source-integration`](../adr/005-traffic-source-integration.md) — **`accepted`** (decisions D10, D12–D15) | The traffic/jam adapter (tests 41–43, 71, and the appended tests 100–111, 121) |
 | [`006-http-and-serialisation`](../adr/006-http-and-serialisation.md) — **`accepted`** (decision D17) | Concrete request/response mapping in all network adapters (tests 30–34, 36–48, 100–116, 121, 122), plus the chokepoint-instance and unknown-fields-ignored tests this ADR adds directly (123, 124) — again excluding test 35, which needs no HTTP client |
-| [`007-relay-and-proxy`](../adr/007-relay-and-proxy.md) — **`accepted`** (decision D18) | The concrete relay-aware client (tests 36, 37, 40, 43, 46, 47, 57, 58, 73, 74, 86, 109, 116), plus the DNS-leak and connection-reuse tests this ADR adds directly (125, 126) — the domain port itself (test 5) and the `RelaySettingsStore` persistence mechanism (test 35, settled independently by decision D2/ADR 014) do not need it |
+| [`007-relay-and-proxy`](../adr/007-relay-and-proxy.md) — **`accepted`** (decision D18) | The concrete relay-aware client (tests 36, 37, 40, 43, 46, 47, 57, 58, 73, 74, 86, 109, 116), plus the client-level DNS test, the connection-reuse test, and the instrumented DNS test this ADR adds directly (125, 126, 127) — the domain port itself (test 5) and the `RelaySettingsStore` persistence mechanism (test 35, settled independently by decision D2/ADR 014) do not need it |
 | [`010-module-layout`](../adr/proposals/010-module-layout.md) — `proposed` | Not a hard blocker for writing domain tests in a temporary single module, but rework is expected if skipped before the first commit |
 
 **003, 005, 006, and 007 are now `accepted`** (decisions D10–D18) — they no longer block writing the
 code that depends on them, only on the remaining `proposed` ADRs in this table (001, 002, 004, 010)
 still gating the concrete adapters. This unblocks writing the concrete HTTP-client/serialisation
-chokepoint (ADR 006) and the relay transport (ADR 007) themselves; test 125's DNS-leak verification
-remains a **blocking** prerequisite of the relay implementation specifically (decision D18),
-independent of every other ADR in this table, and the relay may not be described as working until it
-passes. This narrows, but does not close, the overall `NEEDS_HUMAN_DECISION` verdict at the top of
-this spec.
+chokepoint (ADR 006) and the relay transport (ADR 007) themselves; test 127's **instrumented**
+DNS-leak verification remains a **blocking** prerequisite of the relay implementation specifically
+(decision D18), independent of every other ADR in this table — test 125's client-level check is
+necessary but not sufficient on its own — and the relay may not be described as working until test
+127 passes. This narrows, but does not close, the overall `NEEDS_HUMAN_DECISION` verdict at the top
+of this spec.
 
 **Not a blocker for v0.1**, contrary to what an earlier revision of this spec implied:
 [`008-local-persistence`](../adr/proposals/008-local-persistence.md) is scoped to the v0.4
