@@ -247,7 +247,8 @@ has to be re-verified every time a provider is added or changed.
   protect.** With SOCKS proxying, DNS resolution for the destination host can happen locally by
   default, leaking the hostname to the user's network even though the connection itself is
   subsequently proxied — a documented, unresolved risk for this exact stack, not a hypothetical.
-  Per decision D18, **the relay must not be described as working — here, in `docs/privacy.md`, or in
+  Per decision D18, **the relay must not be described as working — in this or any other document
+  (including `docs/threat-model.md`'s adversary-1 analysis, which names this exact leak path), or in
   the app's UI — until an instrumented test proves no such DNS query leaves the device outside the
   configured proxy** (`docs/specs/001-navigation-mvp.md` test 125); that test is a prerequisite of
   the relay implementation, and if it shows the leak cannot be prevented with this stack, that
