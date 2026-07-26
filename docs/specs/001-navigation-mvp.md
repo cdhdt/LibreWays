@@ -4,7 +4,10 @@
 
 `NEEDS_HUMAN_DECISION` for the feature as a whole: it is feasible, but implementation cannot
 start end-to-end until the ADR proposals listed under [Prerequisites](#prerequisites) are
-resolved by the human. The domain layer and its tests (Stage A–E of the [TDD test
+resolved by the human. Two of those eight — `003-routing-engine` and
+`005-traffic-source-integration` — are now `accepted` (decisions D10–D16); the remaining six
+(001, 002, 004, 006, 007, and 010 as a softer blocker) still gate the concrete adapters and
+screens. The domain layer and its tests (Stage A–E of the [TDD test
 list](#tdd-test-list)) can start immediately and are unaffected by any of those decisions.
 
 **Decisions applied in this revision** (see the maintainer's decision record; not reopened
@@ -18,8 +21,20 @@ bounded, size/TTL-evicted on-disk tile cache; this spec's prior offline-caching 
 were wrong and are corrected below), D9 (the privacy bar governs what leaves the device, not what
 is kept locally; short-TTL on-disk response caches for geocoding and traffic are therefore also
 allowed in v0.1, to the same bound/TTL/LRU/user-clearable/backup-excluded standard as the tile
-cache — FR-18 and FR-27–FR-31 below are widened accordingly). D5 lists what remains genuinely open
-and is not touched here.
+cache — FR-18 and FR-27–FR-31 below are widened accordingly), **D10** (the live traffic/incident
+source is Waze; recorded as `docs/adr/005-traffic-source-integration.md`, `accepted`), **D11**
+(v0.1's routing engine is the same provider as the traffic source — one call returns the route, a
+traffic-aware duration, and a traffic-free duration, with the delay computed as their difference;
+recorded as `docs/adr/003-routing-engine.md`, `accepted`), **D12** (traffic/jam politeness: no
+automatic polling, a five-minute minimum interval between requests covering the same area — served
+from cache in between — and overlapping areas coalesced into one request), **D13** (traffic jams are
+modelled as a new `CongestedSegment` entity, a sibling of `Incident`, with a bounded congestion-level
+enum carrying an explicit `Unknown` case), **D14** (incident reliability signals — confirmation
+count, reporter-trust band, confidence, and age — ship in full from v0.1, not a trimmed subset),
+**D15** (a traffic, jam, or routing area/pair spanning two regions fails with a distinct, explicit
+error rather than silently splitting or returning partial data). D16 (an official Waze partner
+programme is not pursued now; this does not change any FR below) and D5 list what remains genuinely
+open and are not touched here.
 
 ## Goal and user story
 
@@ -51,6 +66,18 @@ the route, updating while the map screen is visible.
   current traffic conditions.
 - Map display of the computed route.
 - Display of `Incident`s that intersect the displayed route.
+- Display of `Incident`s independent of any route — an on-map, viewport-scoped view of
+  community-reported alerts (police, accidents, hazards, closures), each positioned by an absolute,
+  coarsened `Coordinate` rather than only relative to a route (a correction to the prior
+  route-relative-only definition, which could not place a reported alert on the map outside a
+  route — see the note under Stage A test 6), and each carrying a subtype, confirmation count,
+  reporter-trust band, confidence, and age (decision D14). This is what lets the app show a
+  reported incident near the user with no active route.
+- Display of `CongestedSegment`s (traffic jams) on the map and on the active route, each with a
+  bounded congestion-level indicator — never a raw number — and, when available, an estimated delay
+  (decision D13).
+- Display of both a traffic-aware and a traffic-free duration for the computed route, with the
+  traffic delay shown as their difference (decision D11).
 - Display of the user's own live `Position` on the route, kept current only while the app is
   foregrounded and the relevant screen is visible.
 - A relay setting covering every outbound request this feature makes (geocoding, routing,
@@ -71,6 +98,10 @@ the route, updating while the map screen is visible.
   D9). These are repeat-request optimisations and privacy mitigations, not offline support — the
   app still requires connectivity for anything not already cached, and none of the three is a
   user-facing history feature (no "recent searches", see OQ6).
+- Attribution: the app states, in descriptive prose only, where its traffic, incident, and route
+  data come from, without any third-party branding, logo, mascot, icon, or implied affiliation
+  (decision D10; `CLAUDE.md` §5.2). The non-affiliation disclaimer in `README.md` and the About
+  screen is unaffected by this and stays exactly as it is.
 - `en` source strings and `fr` translations for every string this feature introduces.
 
 ## Out of scope (exhaustive)
@@ -89,6 +120,12 @@ the route, updating while the map screen is visible.
 - Proactive incident alerts during a trip and traffic-aware ETA updates beyond the value
   returned by the initial route computation (v0.3).
 - Community contribution / incident reporting (distant roadmap item, not designed).
+- An official Waze Connected Citizens Program (CCP) partnership (decision D16) — not pursued, not
+  assumed, and not designed for; this spec integrates against Waze's consumer surface only.
+- Turn-by-turn instructions sourced from Waze specifically — already out of scope above (decision
+  D16); unchanged by decision D11. Route **geometry** is not excluded — it is required by FR-5 and
+  displayed from v0.1 as it always was; see [Risks](#risks) for the verification step its field
+  names need before the routing adapter is written.
 - Account creation or login of any kind.
 - Multiple alternative routes — this spec assumes exactly one computed route is shown (see
   [OQ4](#open-questions)).
@@ -118,7 +155,7 @@ Numbered, testable, one behaviour each.
 | FR-9 | Enabling a relay mode routes **every** outbound call this feature makes (geocoding, routing, traffic, tiles) through it — none may bypass it. |
 | FR-10 | If `PlaceSearchProvider` is unreachable, the app shows an explicit "unreachable" state, distinct from "no matches", and does not retry before a bounded backoff interval elapses. |
 | FR-11 | If `RouteProvider` is unreachable, the app shows an explicit "unreachable" state and discards any previously displayed route rather than continuing to show it. |
-| FR-12 | If `TrafficIncidentProvider` is unreachable, the app still displays the route without incidents, plus a visible "incidents unavailable" indicator — traffic-incident display failure must not block route display (see [OQ3](#open-questions) on whether this is the same call as FR-4's traffic-aware costing). |
+| FR-12 | If `TrafficIncidentProvider` is unreachable, the app still displays the route without incidents or congested segments, plus a visible "incidents unavailable" indicator — traffic-incident display failure must not block route display. This is a distinct provider call from FR-4's traffic-aware routing ([OQ3](#open-questions) resolved this: two independent calls, decisions D10/D11/D13). |
 | FR-13 | If `TileProvider` is unreachable, the app shows a clear placeholder/error instead of a blank or frozen map, without unbounded retry. |
 | FR-14 | If location permission is denied, the app cannot determine an origin `Position`; it must not substitute a default or fake location, must clearly explain why no route can be computed, and must offer a path to grant permission. |
 | FR-15 | If `RouteProvider` reports no feasible route, the app shows this explicitly, not an empty or broken map. |
@@ -132,12 +169,20 @@ Numbered, testable, one behaviour each.
 | FR-23 | No `PlaceSearchProvider` request is made for whitespace-only input, regardless of length. |
 | FR-24 | The relay setting (`RelayConfiguration`) persists across process death and cold start, via `RelaySettingsStore` backed by Jetpack DataStore Preferences (decision D2, recorded as `docs/adr/014-settings-persistence.md`); together with the three response caches (FR-27–FR-31) it is the only state this feature persists beyond process lifetime. |
 | FR-25 | If the configured relay (Tor / proxy / self-hosted) is unreachable, the request fails outright and the user is informed; the app never falls back to a direct, unrelayed connection (fail-closed, decision D1). |
-| FR-26 | Traffic-incident requests and tile requests use a coarsened viewport/route-corridor area, never the raw device `Position`. This does **not** apply to `RouteProvider` requests (routing correctness requires precise coordinates) or to `PlaceSearchProvider` requests (geocoding needs the full typed text) — those two flows are explicitly exempt, not silently uncovered. |
+| FR-26 | Traffic-area requests (community incidents and congested segments together, via the widened `TrafficIncidentProvider`) and tile requests use a coarsened viewport/route-corridor area, never the raw device `Position`. This does **not** apply to `RouteProvider` requests (routing correctness requires precise coordinates) or to `PlaceSearchProvider` requests (geocoding needs the full typed text) — those two flows are explicitly exempt, not silently uncovered. |
 | FR-27 | Each of the app's three on-disk response caches — tile, geocoding, traffic (decisions D7, D9) — is bounded by its own configured maximum size and configured time-to-live, both expressed as named constants whose concrete values are an open question for the maintainer — never hardcoded magic numbers scattered through the implementation. When a cache's size bound would otherwise be exceeded, that cache's least-recently-used entries are evicted first. Geocoding responses receive the same standard as tiles, not a looser one, because they are the most sensitive of the three artefacts (decision D9). |
 | FR-28 | A cache hit for tile, geocoding, or traffic data that has not exceeded that cache's time-to-live is served without issuing a network request to the corresponding provider (`TileProvider`, `PlaceSearchProvider`, `TrafficIncidentProvider`) — including while the device is offline; see FR-16 for the check ordering this implies. |
 | FR-29 | A cache entry (tile, geocoding, or traffic) whose time-to-live has elapsed is not served as current; the underlying data is re-fetched from its provider and the cache entry is refreshed. |
 | FR-30 | The user can clear each on-disk response cache (tile, geocoding, traffic) on demand from settings; clearing a cache removes all of its entries immediately. Whether this is exposed as one combined action or three independent ones is a presentation-layer choice, not fixed here. |
 | FR-31 | Each on-disk response cache (tile, geocoding, traffic) writes its files under Android's no-backup files directory (`Context.getNoBackupFilesDir()`), which the platform automatically and unconditionally excludes from Auto Backup and Data Extraction Rules by construction — this is enforced by where the file lives, not by authoring a `dataExtractionRules`/`fullBackupContent` XML rule naming the path, and no such XML rule is written for these three caches. None of the three caches is encrypted at rest in this milestone — stated plainly rather than implied protected; the physical-access exposure this creates is recorded in `docs/threat-model.md`. |
+| FR-32 | The app displays `Incident`s independent of any active route — a viewport-scoped view of community-reported alerts — each positioned by an absolute, coarsened `Coordinate` (correcting the prior route-relative-only position, see the note under Stage A test 6) and each carrying a subtype, confirmation count, reporter-trust band, confidence, and age (decision D14). |
+| FR-33 | The app displays `CongestedSegment`s (traffic jams) on the map and on the active route, each with a bounded congestion-level indicator that is never a raw number and, when available, an estimated delay (decision D13). |
+| FR-34 | The app displays both a traffic-aware duration (`durationWithTraffic`) and a traffic-free duration (`durationWithoutTraffic`) for the computed route, with the traffic delay shown as `durationWithTraffic − durationWithoutTraffic` (decision D11). |
+| FR-35 | A minimum of five minutes must elapse between two outbound traffic/jam requests covering the same area; a request for an area within that window is served from the traffic/jam response cache instead, regardless of that cache's own configured time-to-live (decision D12). This is a distinct floor from FR-27's per-cache TTL bound (OQ7), not the same parameter under a different name. |
+| FR-36 | Two traffic/jam requests for overlapping areas are coalesced into a single outbound request rather than issued separately (decision D12). |
+| FR-37 | A traffic, jam, or routing area/pair that the region-selector reports as spanning two regions fails with a distinct, explicit error rather than silently splitting, retrying, or returning partial results (decision D15). |
+| FR-38 | The app states, in plain descriptive prose and without any third-party logo, mascot, icon, or visual pastiche, where its traffic, incident, and route data come from (decision D10; `CLAUDE.md` §5.2). The non-affiliation disclaimer is unaffected and stays exactly as it is. |
+| FR-39 | No traffic or congested-segment request is issued on a timer, on a schedule, or otherwise without a direct, specific user action (opening the map, panning/zooming it, requesting a route) that needs that area's data right now (decision D12). This is distinct from, and in addition to, FR-35's minimum-interval floor and FR-36's coalescing: FR-39 is about what triggers a request at all, the other two are about how requests already triggered are spaced and merged. |
 
 ## Non-functional requirements
 
@@ -150,15 +195,17 @@ beyond what is listed here.
 | Flow | Sent | To whom | Precision | Trigger | Relay-capable |
 |---|---|---|---|---|---|
 | Destination search | Destination text (min. 3 chars, 600 ms debounce, cancelled on change) | `PlaceSearchProvider` | Full text precision — not coarsenable (FR-26 exemption) | User typing, **repeated per keystroke burst**, including text later deleted (decision D3) | Required (FR-9) |
-| Route computation | Origin + destination coordinates | `RouteProvider` | Full precision — not coarsenable (FR-26 exemption; routing correctness) | `Place` selected | Required (FR-9) |
-| Traffic incidents | Route or viewport area | `TrafficIncidentProvider` | Coarsened bounding box/corridor — never the raw device `Position` (FR-26) | Route computed | Required (FR-9) |
+| Route computation | Origin + destination coordinates | `RouteProvider` (decision D11: the same provider as the traffic flow below) | Full precision — not coarsenable (FR-26 exemption; routing correctness) | `Place` selected | Required (FR-9) |
+| Traffic incidents & congested segments | Route-corridor or viewport area | `TrafficIncidentProvider` (widened; one call returns both incidents and jams, decision D13) | Coarsened bounding box/corridor — never the raw device `Position` (FR-26) | Route computed, or the traffic/map layer viewed; no more than once per five minutes for a given area, served from cache in between, with overlapping areas coalesced (FR-35, FR-36, decision D12) | Required (FR-9) |
 | Map tiles | Viewport area | `TileProvider` | Tile-grid quantised viewport — never the raw device `Position` (FR-26) | Map panned/zoomed | Required (FR-9) |
 | Device position | — (stays on device) | Nobody directly | Coarsest sufficient for on-route placement (OQ2) | Map screen visible, foregrounded | N/A — never transmitted raw; only feeds the coordinates above |
 
 Coarsening (FR-26) applies **only** to the traffic and tile flows above; routing and geocoding
 are explicitly exempt for the reasons stated in FR-26 — a reader should not infer blanket
 coverage across all four flows from the general "coarsen what leaves the device" principle in
-`CLAUDE.md` §5.1.
+`CLAUDE.md` §5.1. Decision D11 does not change this: the routing flow's exemption predates it and
+is unaffected by the routing and traffic flows now sharing a named provider (Waze, decision D10;
+`docs/privacy.md`).
 
 The map-tile, geocoding, and traffic flows additionally each maintain a bounded, size/TTL-evicted
 on-disk response cache from v0.1 (FR-27–FR-31, decisions D7/D9): a cache hit for any of the three
@@ -167,7 +214,9 @@ produces no network request at all. This does not change what is sent when a req
 weaken FR-19 or FR-26 either: a cached geocoding or traffic response is not logged, and caching
 does not coarsen or alter the content of what was actually sent when the cache was populated. See
 [`../privacy.md`](../privacy.md) flows (a), (b), and (c) for the full retention, deletion, and
-backup-exclusion account of each cache.
+backup-exclusion account of each cache. The traffic flow's cache additionally enforces the
+five-minute minimum request interval and area-coalescing of FR-35/FR-36 (decision D12) — a distinct
+mechanism from the cache's own TTL bound (FR-27, OQ7), not a restatement of it.
 
 None of these flows may run, or be requested, while the app is not foregrounded (this milestone
 has no background operation at all).
@@ -190,10 +239,11 @@ has no background operation at all).
 
 ### Accessibility
 
-- Every map marker (own position, route, incidents) and the tile-unreachable placeholder has a
-  content description.
-- Route and incident severity are never conveyed by colour alone — always paired with a shape,
-  icon, or label distinguishable without colour vision.
+- Every map marker (own position, route, incidents, congested segments) and the tile-unreachable
+  placeholder has a content description.
+- Route severity, incident severity, and congestion level (`CongestedSegment`, decision D13) are
+  never conveyed by colour alone — always paired with a shape, icon, or label distinguishable
+  without colour vision.
 - All error/empty states (`ProviderUnreachable`, no matches, no route, offline, tile placeholder,
   `RelayUnreachable`, and the first-run `RelayNotChosen` gate) are reachable and announced by a
   screen reader — the three failure types of decision D6 are distinct states with distinct copy,
@@ -204,9 +254,12 @@ has no background operation at all).
 
 - Source locale `en`; `fr` maintained alongside every change (FR-20).
 - No hardcoded user-facing string anywhere in this feature.
-- No third-party branding or name appears in any string (per `CLAUDE.md` §5.2) — provider names
-  never appear in UI copy, only neutral descriptions if any attribution is legally required
-  (open legal question, escalate if it arises).
+- No third-party **branding** appears in any string — no logo, mascot, icon, or visual pastiche of
+  a provider's identity (`CLAUDE.md` §5.2). The one exception is plain descriptive prose naming the
+  data recipient in the attribution string FR-38 requires (decision D10) — never in the app name,
+  package name, icon, launcher label, or any other branded position. Whether attribution wording is
+  legally mandated beyond that remains an open legal question, escalated if it arises, not resolved
+  here.
 
 ## Layered decomposition
 
@@ -222,32 +275,59 @@ ports (no mocking library).
 - **Value objects**: `Coordinate` (validated latitude/longitude), `Place` (a resolved search
   result: label + `Coordinate` + confidence + provenance — the same definition
   `docs/architecture/README.md` §2.1 uses, stated once and shared rather than each document
-  inventing its own), `Route` (ordered path + traffic-adjusted duration/cost), `Incident` (kind +
-  a position expressed relative to a `Route` — not a standalone `Coordinate` — + severity, per
-  Stage A test 6), `Position` (the device's own current location: a `Coordinate` + accuracy +
-  capture time, distinct from `Place`), `RelayConfiguration` (a distinct `NotChosen` state —
-  egress-blocking, never treated as equivalent to any selectable mode — plus the four selectable
-  modes: direct/no-relay, Tor, proxy, self-hosted, each with mode-specific endpoint data).
+  inventing its own), `Route` (ordered path + `durationWithTraffic` + `durationWithoutTraffic`,
+  with `trafficDelay` as a **computed property** — `durationWithTraffic − durationWithoutTraffic`,
+  never a stored, independently-settable field, so the two source figures can never drift out of
+  sync with a separately-cached delay value — decision D11), `Incident` (kind + `subtype` —
+  `IncidentSubtype`, a bounded enum with an explicit `Unknown` fallback for a value the mapping
+  table does not recognise — + an absolute, coarsened `Coordinate` position, independent of any
+  `Route` (test 6, corrected — see the note under Stage A) + severity + reliability signals:
+  confirmation count, reporter-trust band, confidence, and an age derived from a captured
+  `reportedAt` instant rather than a stored duration, so freshness can be recomputed live rather
+  than going stale the instant it is captured — decision D14), `CongestedSegment` (**new**, a
+  sibling of `Incident`, not a variant of it, decision D13: a non-empty polyline of `Coordinate`s,
+  `congestionLevel` — a bounded enum with an explicit `Unknown` fallback, never a raw integer,
+  because the source's own documentation disagrees with itself about how many congestion levels
+  exist — and a nullable `estimatedDelay`, where `null` means "blocked/no finite figure" rather
+  than round-tripping the source's own sentinel value for that case), `Position` (the device's own
+  current location: a `Coordinate` + accuracy + capture time, distinct from `Place`),
+  `RelayConfiguration` (a distinct `NotChosen` state — egress-blocking, never treated as equivalent
+  to any selectable mode — plus the four selectable modes: direct/no-relay, Tor, proxy,
+  self-hosted, each with mode-specific endpoint data).
 - **Repository interfaces (ports)**, implemented by `data`: `PlaceSearchProvider`
   (`search(text) -> candidates or a typed error`), `RouteProvider` (`route(origin, destination)
-  -> Route or a typed error`, traffic-aware), `TrafficIncidentProvider` (`incidentsAlong(route)
-  -> incidents or a typed error` — possibly the same provider as `RouteProvider`, see OQ3),
-  `TileProvider` (`tile(viewport or z/x/y) -> tile data or a typed error`), `OwnPositionSource`
+  -> Route or a typed error`, traffic-aware; **signature unchanged by decision D11** — only
+  `Route`'s own shape gained a field, keeping this port abstract enough that an on-device engine
+  remains addable later as an offline mode without touching `domain` or `presentation`, per
+  `docs/adr/003-routing-engine.md`), `TrafficIncidentProvider` (**widened, not renamed**, decisions
+  D13/D15: `snapshotFor(area) -> TrafficSnapshot or a typed error`, where `area` is a sealed
+  `TrafficArea = RouteCorridor(route) | Viewport(bounds)` and `TrafficSnapshot` carries both
+  `incidents: List<Incident>` and `congestedSegments: List<CongestedSegment>` — a single call
+  already answers both capabilities for either scope, carrying forward the one-request-per-area
+  politeness property `docs/adr/005-traffic-source-integration.md` requires), `TileProvider`
+  (`tile(viewport or z/x/y) -> tile data or a typed error`), `OwnPositionSource`
   (`observe current position, only while told the app is foregrounded`), `RelaySettingsStore`
   (`get/set the active RelayConfiguration`, persisted via DataStore Preferences per decision D2,
   read by every outbound-call site before it acts).
 - **Use cases**, each returning an explicit sealed result type rather than throwing for expected
   failures: `Success`, `NotFound`/`NoMatches`, `NoRouteFound`, `Offline`, `PermissionDenied`,
-  `IncidentsUnavailable` as applicable, and three distinct, never-conflated relay/provider failure
-  types per decision D6 — aligning this spec to `docs/architecture/README.md` §2.1/§6, which
-  already modelled relay failure separately: `ProviderUnreachable` (the relay path is fine; the
-  upstream provider itself failed), `RelayNotChosen` (returned when the relay choke point blocks a
-  call because no relay choice has been made yet, FR-8), and `RelayUnreachable` (returned when the
-  choke point fails a call because a *configured* relay could not be reached, FR-25). A prior
-  revision of this spec folded all three into `ProviderUnreachable`; that was a defect, not a
-  simplification, since the user's remedy differs for each (choose a mode; fix or change the
-  relay; retry later). Use cases: `ResolveDestination`, `RequestRoute`, `LoadIncidentsForRoute` (a
-  use case in its own right, not folded into `RequestRoute`), `TrackOwnPosition`.
+  `IncidentsUnavailable` (widened, decision D13, to cover the whole `TrafficSnapshot` — incidents
+  and congested segments together, since both now come from one call — not renamed, since the
+  existing name and its tests already carry this meaning for `LoadIncidentsForRoute`) as applicable,
+  and three distinct, never-conflated relay/provider failure types per decision D6 — aligning this spec to
+  `docs/architecture/README.md` §2.1/§6, which already modelled relay failure separately:
+  `ProviderUnreachable` (the relay path is fine; the upstream provider itself failed),
+  `RelayNotChosen` (returned when the relay choke point blocks a call because no relay choice has
+  been made yet, FR-8), and `RelayUnreachable` (returned when the choke point fails a call because
+  a *configured* relay could not be reached, FR-25). A prior revision of this spec folded all three
+  into `ProviderUnreachable`; that was a defect, not a simplification, since the user's remedy
+  differs for each (choose a mode; fix or change the relay; retry later). Use cases:
+  `ResolveDestination`, `RequestRoute`, `LoadIncidentsForRoute` (a use case in its own right, not
+  folded into `RequestRoute`; now reads its incidents out of the wider `TrafficSnapshot` returned by
+  the widened port, filtered to the route's corridor — its own contract is otherwise unchanged,
+  test 99), `LoadTrafficForArea` (**new**: the viewport-scoped sibling of `LoadIncidentsForRoute`,
+  backed by the same widened port, returning a full `TrafficSnapshot` — incidents and congested
+  segments — for a viewport, tests 95–98), `TrackOwnPosition`.
 - No networking type, Android type, or map-rendering type appears anywhere in this layer.
 
 ### Data
@@ -281,6 +361,29 @@ ports (no mocking library).
 - Owns coordinate/area coarsening for the traffic and tile flows only, applied before a request
   is built (FR-26); routing and geocoding requests are deliberately not coarsened, for the
   reasons FR-26 states.
+- Implements the widened `TrafficIncidentProvider` (incidents + congested segments, for a route
+  corridor or a viewport) against Waze's live-map area endpoint
+  (`docs/adr/005-traffic-source-integration.md`, decision D10). Every request still originates from
+  a direct user action — opening the map, moving it, requesting a route — never a timer or schedule
+  the adapter runs on its own (FR-39, decision D12); on top of that, a five-minute minimum interval
+  applies between two requests covering the same area — served from the traffic cache in between,
+  independent of that cache's own configured TTL (FR-35) — and overlapping-area requests coalesce
+  into one (FR-36, decision D12). All three are enforced at the shared networking chokepoint
+  alongside the existing debounce pattern (FR-21), not per-adapter. Defensive parsing is **mandatory, not
+  optional**, because the source's own documentation is internally inconsistent: an unrecognised or
+  differently-cased field (e.g. an alert `subtype` casing variant) maps to that field's own
+  `Unknown` fallback rather than being dropped or crashed on, and a congestion level outside any
+  range the adapter recognises maps to `CongestionLevel.Unknown` rather than an out-of-bounds value,
+  because the source's own documentation disagrees with itself about how many levels exist. An area
+  the region-selector reports as spanning two regions fails with a distinct, explicit region-mismatch
+  error rather than silently splitting or returning partial results (FR-37, decision D15).
+- Implements `RouteProvider` against the same provider as the traffic/jam adapter (Waze, decision
+  D11, `docs/adr/003-routing-engine.md`): one request returns the route, `durationWithTraffic`, and
+  `durationWithoutTraffic` together; `Route.trafficDelay` is computed in `domain` from the two
+  durations, never received from the provider or estimated separately. A response missing either
+  duration figure, or using an alternate key-naming variant known to exist in the wild, is handled
+  defensively exactly like the traffic adapter above; a "no path" response maps to `NoRouteFound`,
+  unchanged from the existing routing-adapter contract.
 - Implements `RelaySettingsStore` against Jetpack DataStore Preferences (decision D2, recorded as
   [`014-settings-persistence`](../adr/014-settings-persistence.md)) so the relay setting survives
   process death and cold start; this does not depend on
@@ -293,10 +396,12 @@ ports (no mocking library).
 ### Presentation
 
 - Holds no business logic. Renders: the destination search field and its result/empty/error
-  states; the map with route, incident, own-position, and tile-placeholder overlays; the
-  graceful-degradation states (FR-10 through FR-16); a first-run relay-choice step that gates
-  access to any network-using screen until a mode is chosen (FR-8); the relay setting screen
-  thereafter.
+  states; the map with route, incident, congested-segment, own-position, and tile-placeholder
+  overlays; the route's traffic-aware and traffic-free durations and the traffic delay between them
+  (FR-34, decision D11); the graceful-degradation states (FR-10 through FR-16); a first-run
+  relay-choice step that gates access to any network-using screen until a mode is chosen (FR-8); the
+  relay setting screen thereafter; a fixed attribution statement naming where traffic, incident, and
+  route data come from (FR-38, decision D10).
 - Owns the lifecycle wiring that starts/stops location observation and any pending network
   activity based on screen visibility and app foreground state — this is a presentation
   responsibility, not `domain`'s or `data`'s.
@@ -305,10 +410,18 @@ ports (no mocking library).
 
 ## TDD test list
 
-Ordered; each test is the next smallest failing step. 87 tests total: 1–75 from the base feature,
-plus 76–87 appended for decision D9 (the geocoding/traffic response caches) and for two
+Ordered; each test is the next smallest failing step. 122 tests total: 1–75 from the base feature,
+76–87 appended for decision D9 (the geocoding/traffic response caches) and for two
 presentation-layer gaps a later review found (the `RelayUnreachable` UI state and the cache-clear
-settings affordance) — appended rather than inserted, so no test 1–75 was renumbered. Tests in
+settings affordance), 88–117 appended for decisions D10–D16 (Waze-backed routing and traffic
+integration: the `Incident`/`CongestedSegment`/`Route` domain additions, the widened traffic port
+and its new use case, the traffic/jam and routing adapters, the five-minute politeness floor and
+area-coalescing, and attribution), 118–120 appended for a review-found gap (FR-32–FR-34's display
+requirements had no Stage G test), 121 appended for a second review-found gap (FR-39's
+no-automatic-polling rule had no test), and 122 appended for a third review-found gap (FR-37's
+region-mismatch rule had no test for the routing flow, only the traffic/jam flow) — appended rather
+than inserted, so no test 1–121 was renumbered. Test 6 is corrected in place (see the note under
+it) without changing its number. Tests in
 Stages A–E use hand-written fakes of the domain ports above and are independent of every undecided
 library. Stages F and G name the component under test generically ("the injected client/HTTP
 port") precisely so they do not assume a library choice; when an ADR is resolved, the concrete
@@ -323,7 +436,17 @@ adapter is substituted without rewriting the test's intent.
 5. `RelayConfiguration` models an explicit `NotChosen` state, distinct from every selectable mode
    (direct/no-relay, Tor, proxy, self-hosted) — nothing about constructing the type collapses
    the unset state into `Direct` (decision D1).
-6. `Incident` requires a severity and a position expressed relative to a route.
+6. `Incident` requires a severity and an absolute, coarsened `Coordinate` position, independent of
+   any `Route` (corrected in place; see the note immediately below — no test number changes).
+
+Note: an earlier revision of this test required `Incident`'s position to be expressed only
+relative to a `Route`. That was a defect, not a deliberate simplification — the recon behind
+decisions D10–D16 found it could not place a reported incident on the map outside an active route,
+which the "see a reported alert near me" capability (FR-32) requires. Corrected in place here,
+mirroring how FR-18 was corrected in an earlier revision of this document, rather than left wrong
+and superseded by a later appended test. Whether an incident lies within a given route's corridor
+is now a query performed by `LoadIncidentsForRoute` (test 22) over the wider `TrafficSnapshot` (see
+tests 88–117), not an intrinsic property of `Incident` itself.
 
 **Stage B — Destination-search use case (`ResolveDestination`)**
 
@@ -560,9 +683,162 @@ mechanism was tested at the data layer (tests 52, 79, 84) but never wired to a s
     verified at the data layer by tests 52, 79, and 84 — wiring only; durability of the clearing
     behaviour itself is those three tests, not this one.
 
+**Stage A (continued) — domain additions for decisions D10–D16 (Waze-backed routing and traffic)**
+
+Appended here rather than inserted into Stage A's original position, for the same
+numbering-stability reason as every other appended block above: every existing cross-reference to
+tests 1–87 elsewhere in this document, in `docs/testing.md`, and in the ADR proposals stays valid.
+These are pure-Kotlin domain tests against hand-written fakes/fixtures, independent of every
+pending ADR, exactly like tests 1–6.
+
+88. `Incident.subtype` maps an unrecognised source value to `Unknown` rather than throwing or
+    defaulting to a guessed known case.
+89. `Incident`'s reliability signals bundle a confirmation count and a reporter-trust band, both
+    constructible independently of each other — no field requires the other to be present.
+90. `CongestedSegment` requires a non-empty geometry (at least two points).
+91. `CongestedSegment.congestionLevel` maps an out-of-range or unrecognised source value to
+    `Unknown`.
+92. `CongestedSegment.estimatedDelay` is `null` when the source's sentinel-for-blocked value is
+    mapped, never a literal negative duration.
+93. `Route.trafficDelay` equals `durationWithTraffic − durationWithoutTraffic` and is never a
+    stored, independently-settable field — a regression guard against the two figures drifting
+    apart (decision D11).
+94. `Route.trafficDelay` is non-negative for a route where traffic is at or below the free-flow
+    baseline — given fixture data where the two source durations are equal, or where
+    `durationWithTraffic` is (incorrectly, per a malformed fixture) reported lower than
+    `durationWithoutTraffic`, the delay floors at zero rather than going negative.
+
+**Stage D (continued) — `LoadTrafficForArea`, and `LoadIncidentsForRoute`'s widened backing**
+
+95. `LoadTrafficForArea` requests a `TrafficSnapshot` scoped to a given viewport, not the whole
+    visible map margin beyond what was asked.
+96. Returns both `incidents` and `congestedSegments` from a single `TrafficIncidentProvider` call —
+    asserted via a fake that records call count, guarding the one-call-per-area politeness property
+    (decision D12).
+97. Returns an empty `TrafficSnapshot` (not an error) for an area with no incidents and no
+    congested segments.
+98. Returns a distinct "unavailable" result — not a blocking error — when the port is unreachable,
+    so map/route display continues without the overlay (widens the existing `IncidentsUnavailable`
+    behaviour to also cover congested segments, decision D13).
+99. `LoadIncidentsForRoute`, now backed by the widened port, still returns only incidents
+    intersecting the route corridor, not the full `TrafficSnapshot` unfiltered — a regression guard
+    that widening the port did not widen this use case's own contract.
+
+**Stage F (continued) — traffic/jam adapter widening (decisions D10, D12, D13, D15)**
+
+Mirrors the shape of tests 41–43 (the existing traffic adapter) and 49–53/76–85 (the response
+caches), extended for the widened port and the new politeness/resilience requirements.
+
+100. Maps a successful area response into `Incident` objects with correctly parsed subtype,
+     position, and reliability fields, against a fixture built from a real observed sample shape.
+101. Maps a successful area response into `CongestedSegment` objects with correctly parsed
+     geometry, congestion level, and delay (including the blocked-sentinel case from test 92).
+102. Given a fixture with a field the adapter does not recognise (an extra key, a renamed key, or
+     an alert `subtype` casing variant), the adapter still produces a result for every field it
+     *does* recognise, and maps the rest to their `Unknown` fallbacks — never throwing and never
+     dropping the whole response over one unfamiliar field.
+103. Given a fixture that is malformed in a way no fallback covers (e.g. missing a structurally
+     required field like the array itself), the adapter maps this to a typed provider error, not
+     an unhandled exception escaping to `domain`.
+104. Given an empty-area fixture (valid response, zero incidents, zero congested segments), the
+     adapter returns an empty `TrafficSnapshot`, not an error.
+105. Given a simulated throttled response (`429`/`Retry-After` or equivalent fixture), the adapter
+     backs off per the configured policy and does not reissue before the backoff interval elapses.
+106. Given a simulated blocked response (sustained `403`-shaped fixture), the adapter surfaces
+     `ProviderUnreachable` and does not retry in a tight loop.
+107. Given a bounding box the fake region-selector reports as spanning two regions, the adapter
+     fails explicitly with a distinct region-mismatch error (FR-37, decision D15) — never silently
+     picking one region, splitting the request, retrying, or returning partial results.
+108. Coarsens the requested area before it reaches the injected transport, exactly like tests
+     42/45's existing pattern — extended here to confirm the widened port still coarsens for the
+     viewport case, not only the route-corridor case (FR-26).
+109. Routes through the currently active `RelayConfiguration`, and issues an identical payload
+     whether relayed or not, mirroring tests 36/37/46/47, extended to the widened request shape.
+110. Enforces a five-minute minimum interval between two requests covering the same area: a request
+     issued before five minutes have elapsed since the last request for that area is served from
+     the traffic cache instead, independent of that cache's own configured TTL (FR-35, decision
+     D12).
+111. Coalesces two requests for overlapping areas into a single outbound request rather than
+     issuing them separately (FR-36, decision D12).
+
+**Stage F (continued) — routing adapter, Waze-backed (decision D11)**
+
+112. Maps a successful response into a `Route` carrying both `durationWithTraffic` and
+     `durationWithoutTraffic` from the two source fields, not just one.
+113. Given a fixture missing the without-traffic figure, the adapter surfaces a typed provider
+     error rather than inventing a value or silently falling back to a single-duration `Route`.
+114. Given a fixture using an alternate key-naming variant already known to exist in the wild for
+     this kind of source, the adapter still parses correctly — a direct regression guard against
+     response-shape drift.
+115. Maps a "no path" response into the existing `NoRouteFound` result, unchanged from the current
+     routing-adapter test pattern.
+116. Applies the same unreachable/offline/relay/throttled/blocked mapping behaviour as the
+     traffic/jam adapter (parallel suite, own provider), mirroring tests 40, 105, and 106.
+
+**Stage G (continued) — attribution (decision D10, FR-38)**
+
+117. A fixed, always-reachable location in the app (e.g. an about/info screen or a map-layer
+     legend) renders a plain descriptive statement naming where traffic, incident, and route data
+     come from, with no logo, mascot, icon, or visual pastiche of that source's identity — wiring
+     only; the non-affiliation disclaimer itself is unaffected and outside this feature's test
+     surface.
+
+**Stage G (continued) — viewport incidents, congestion display, and dual duration (decisions D11,
+D13, D14)**
+
+Appended for the same reason as every other Stage G addition above: tests 60–75 already cover every
+pre-existing display requirement (FR-1 through FR-16), and a prior pass of this revision widened the
+domain and data layers for FR-32–FR-34 without adding the matching presentation-layer tests — a gap
+a later review caught, mirroring how tests 86–87 closed an equivalent gap for FR-25/FR-30 in an
+earlier revision.
+
+118. Map screen renders `Incident` markers from `LoadTrafficForArea`, independent of any active
+     `Route` — for a viewport with no computed route, incidents are still rendered, each exposing
+     its subtype, confirmation count, reporter-trust band, confidence, and age (FR-32, decision
+     D14) — distinct from test 71, which covers only incidents already scoped to a displayed route.
+119. Map screen renders `CongestedSegment` overlays — both along an active route and, independent of
+     a route, for a viewport — each with a congestion-level indicator distinguishable without colour
+     alone and, when `estimatedDelay` is present, that delay; a `null` `estimatedDelay` renders as
+     "blocked", never as a numeric delay of zero or a negative value (FR-33, decision D13).
+120. Map/route screen renders both `durationWithTraffic` and `durationWithoutTraffic` for a computed
+     `Route`, with the traffic delay between them displayed as their difference, not recomputed or
+     reformatted by `presentation` itself (FR-34, decision D11).
+
+**Stage F (continued) — no-automatic-polling regression guard (FR-39, decision D12)**
+
+Appended for a review-found gap: ADR 005 states D12's "no automatic polling" rule as a requirement
+with a test, but a prior pass of this revision gave the five-minute floor (FR-35) and coalescing
+(FR-36) tests without a test for the triggering rule itself — the property that no request exists
+without a real, direct user action behind it, distinct from how already-triggered requests are
+spaced or merged.
+
+121. Given a fake clock advanced by several multiples of the five-minute interval with no
+     user-triggered call to `LoadTrafficForArea` or `LoadIncidentsForRoute` occurring in between,
+     the traffic/jam adapter issues zero requests to `TrafficIncidentProvider` — a regression guard
+     that the five-minute figure (FR-35) is a minimum spacing between real, user-triggered calls,
+     never a background poll the adapter invents on its own (FR-39).
+
+**Stage F (continued) — routing adapter region mismatch (FR-37, decision D15)**
+
+Appended for a review-found gap: FR-37 and decision D15 explicitly cover "a traffic, jam, **or
+routing** area/pair" spanning two regions, and test 107 verifies this for the traffic/jam adapter,
+but no equivalent test existed for the routing adapter, and test 116's mirror list (unreachable,
+offline, relay, throttled, blocked) deliberately did not include it either. This is not a
+theoretical gap: a routing request's origin and destination are two independent points that can
+straddle a regional boundary just as plausibly as a viewport can — a cross-border trip (e.g. an
+origin and destination in two different countries the region-selector maps to different regional
+Waze hosts) is an ordinary routing use case, not an edge case invented for this test. The routing
+flow can hit this condition, so it is tested, not argued away.
+
+122. Given an origin/destination pair the fake region-selector reports as spanning two regions, the
+     routing adapter fails explicitly with a distinct region-mismatch error (FR-37, decision D15) —
+     never silently sending the pair to a single region's host, splitting the request, retrying, or
+     returning a partial or guessed route — mirroring test 107's behaviour for the routing flow
+     specifically.
+
 ## Definition of Done
 
-- [ ] FR-1 through FR-31 are each covered by at least one passing test from the list above,
+- [ ] FR-1 through FR-39 are each covered by at least one passing test from the list above,
       **except FR-18's negative clause** — that no persistence of destination text, search
       results, or the computed route exists *beyond* the relay setting and the three bounded
       response caches (no separate, unbounded, user-facing "recent searches" or trip-history path)
@@ -593,6 +869,31 @@ mechanism was tested at the data layer (tests 52, 79, 84) but never wired to a s
 - [ ] Test 59 passes: FR-19 (no PII in logs) is covered by an automated fake-logger assertion,
       not by manual review alone. A manual logcat spot-check during the self-review pass remains
       good practice but is not the basis of this DoD item.
+- [ ] Tests 88–99 pass: the `Incident`/`CongestedSegment`/`Route` domain additions (subtype,
+      absolute coarsened position, reliability signals, congestion-level and delay fallbacks, the
+      computed `trafficDelay`) and the widened `LoadTrafficForArea`/`LoadIncidentsForRoute` use
+      cases behave as decisions D11, D13, and D14 require, entirely against fakes.
+- [ ] Tests 100–111 pass: the widened traffic/jam adapter parses defensively (an unrecognised or
+      differently-cased field never drops or crashes the whole response), fails explicitly on a
+      structurally malformed response or a region-spanning area (FR-37), and enforces the
+      five-minute minimum request interval and area-coalescing (FR-35, FR-36, decision D12) —
+      distinct from, and in addition to, the existing traffic-cache TTL tests (81–85).
+- [ ] Tests 112–116 pass: the Waze-backed routing adapter (decision D11) carries both durations,
+      fails explicitly rather than guessing on a missing figure or a "no path" response, and applies
+      the same resilience behaviour as the traffic/jam adapter.
+- [ ] Test 122 passes: FR-37's region-mismatch rule (decision D15) is enforced for the routing
+      flow, not only the traffic/jam flow (test 107) — a cross-region origin/destination pair fails
+      explicitly rather than being silently sent to one region's host.
+- [ ] Test 117 passes: the attribution statement (FR-38, decision D10) is rendered, without any
+      third-party branding, and the non-affiliation disclaimer is unchanged.
+- [ ] Tests 118–120 pass: FR-32 (viewport-independent incidents with their reliability signals),
+      FR-33 (congested-segment overlays with a non-colour-only congestion indicator and a correct
+      "blocked" rendering of a `null` delay), and FR-34 (both route durations and their delay) are
+      each rendered, not only modelled in `domain`/`data` — closing the presentation-layer gap a
+      later review found in this revision.
+- [ ] Test 121 passes: no traffic/jam request is ever issued without a real, direct user-triggered
+      call — the five-minute floor (FR-35) spaces real triggers apart, it does not itself become a
+      background poll (FR-39, decision D12).
 - [ ] No network call, location read, or map render occurs while the app is backgrounded or the
       screen is off (verified, not assumed).
 - [ ] No data is persisted beyond process lifetime except the relay setting (FR-24, via
@@ -626,16 +927,21 @@ mechanism was tested at the data layer (tests 52, 79, 84) but never wired to a s
 
 **Must be resolved (ADR approved) before the corresponding code is written:**
 
-| ADR proposal | Blocks |
+| ADR | Blocks |
 |---|---|
-| [`001-ui-toolkit`](../adr/proposals/001-ui-toolkit.md) | All of Stage G (presentation), tests 60–75, plus the appended presentation tests 86–87 |
-| [`002-map-rendering-and-tiles`](../adr/proposals/002-map-rendering-and-tiles.md) | The map screen (tests 65–72) and the tile-provider outbound flow (tests 44–48) |
-| [`003-routing-engine`](../adr/proposals/003-routing-engine.md) | The routing adapter (tests 38–40, 65–69); also settles OQ3 |
-| [`004-geocoding-provider`](../adr/proposals/004-geocoding-provider.md) | The geocoding adapter and search screen wiring (tests 30–34, 36–37, 60–64) — test 35 (`RelaySettingsStore`) sits between 34 and 36 but does not need this ADR, see below |
-| [`005-traffic-source-integration`](../adr/proposals/005-traffic-source-integration.md) | The traffic adapter (tests 41–43, 71) |
-| [`006-http-and-serialisation`](../adr/proposals/006-http-and-serialisation.md) | Concrete request/response mapping in all four network adapters (tests 30–34, 36–48) — again excluding test 35, which needs no HTTP client |
-| [`007-relay-and-proxy`](../adr/proposals/007-relay-and-proxy.md) | The concrete relay-aware client (tests 36, 37, 40, 43, 46, 47, 57, 58, 73, 74, 86) — the domain port itself (test 5) and the `RelaySettingsStore` persistence mechanism (test 35, settled independently by decision D2/ADR 014) do not need it |
-| [`010-module-layout`](../adr/proposals/010-module-layout.md) | Not a hard blocker for writing domain tests in a temporary single module, but rework is expected if skipped before the first commit |
+| [`001-ui-toolkit`](../adr/proposals/001-ui-toolkit.md) — `proposed` | All of Stage G (presentation), tests 60–75, plus the appended presentation tests 86–87, 117, and 118–120 |
+| [`002-map-rendering-and-tiles`](../adr/proposals/002-map-rendering-and-tiles.md) — `proposed` | The map screen (tests 65–72) and the tile-provider outbound flow (tests 44–48) |
+| [`003-routing-engine`](../adr/003-routing-engine.md) — **`accepted`** (decision D11) | The routing adapter (tests 38–40, 65–69, and the appended tests 112–116, 122); OQ3 is resolved by this decision and D13, see [Open questions](#open-questions) |
+| [`004-geocoding-provider`](../adr/proposals/004-geocoding-provider.md) — `proposed` | The geocoding adapter and search screen wiring (tests 30–34, 36–37, 60–64) — test 35 (`RelaySettingsStore`) sits between 34 and 36 but does not need this ADR, see below |
+| [`005-traffic-source-integration`](../adr/005-traffic-source-integration.md) — **`accepted`** (decisions D10, D12–D15) | The traffic/jam adapter (tests 41–43, 71, and the appended tests 100–111, 121) |
+| [`006-http-and-serialisation`](../adr/proposals/006-http-and-serialisation.md) — `proposed` | Concrete request/response mapping in all network adapters (tests 30–34, 36–48, 100–116, 121, 122) — again excluding test 35, which needs no HTTP client |
+| [`007-relay-and-proxy`](../adr/proposals/007-relay-and-proxy.md) — `proposed` | The concrete relay-aware client (tests 36, 37, 40, 43, 46, 47, 57, 58, 73, 74, 86, 109, 116) — the domain port itself (test 5) and the `RelaySettingsStore` persistence mechanism (test 35, settled independently by decision D2/ADR 014) do not need it |
+| [`010-module-layout`](../adr/proposals/010-module-layout.md) — `proposed` | Not a hard blocker for writing domain tests in a temporary single module, but rework is expected if skipped before the first commit |
+
+**003 and 005 are now `accepted`** (decisions D10–D16) — they no longer block writing the code that
+depends on them, only on the remaining `proposed` ADRs in this table (001, 002, 004, 006, 007, 010)
+still gating the concrete adapters. This narrows, but does not close, the overall
+`NEEDS_HUMAN_DECISION` verdict at the top of this spec.
 
 **Not a blocker for v0.1**, contrary to what an earlier revision of this spec implied:
 [`008-local-persistence`](../adr/proposals/008-local-persistence.md) is scoped to the v0.4
@@ -652,9 +958,11 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
 
 **Can start before any ADR is resolved:**
 
-- Stage A (domain value objects, tests 1–6) — pure Kotlin, no external dependency.
-- Stages B–E (use-case tests, tests 7–29) against hand-written fakes of the domain ports — this
-  is also how the ports themselves get frozen before `data` implements them.
+- Stage A (domain value objects, tests 1–6, plus the appended domain tests 88–94) — pure Kotlin, no
+  external dependency.
+- Stages B–E (use-case tests, tests 7–29, plus the appended `LoadTrafficForArea`/
+  `LoadIncidentsForRoute` tests 95–99) against hand-written fakes of the domain ports — this is
+  also how the ports themselves get frozen before `data` implements them.
 - Test 35 (`RelaySettingsStore` persistence), against a fake DataStore Preferences instance —
   gated by no ADR, per the paragraph above.
 - The tile-cache adapter tests (49–52), the geocoding-cache adapter tests (76–79), and the
@@ -668,11 +976,35 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
 
 ## Risks
 
-- **Split traffic providers.** If routing (003) and traffic-incident listing (005) turn out to
-  be two independent calls rather than one, FR-6 and FR-4 depend on two independently-failing
-  providers, which doubles the distinct error states presentation must handle beyond what this
-  spec assumes. Re-baseline the affected functional requirements and tests once 003/005 are
-  resolved (see OQ3).
+- **Resolved — split traffic providers (was: "Split traffic providers").** OQ3 asked whether
+  routing (FR-4) and traffic-incident listing (FR-6) would turn out to be one call or two. Decisions
+  D11/D13 answer this: they are **two independent port calls** (`RouteProvider` for the route and
+  its two durations; the widened `TrafficIncidentProvider` for incidents and congested segments),
+  even though both are now backed by the same operator (Waze, decision D10). This recon found no
+  evidence the two wire requests can be merged into one. FR-11 and FR-12 already modelled two
+  independent error states for exactly this shape, so no re-baselining of this spec was needed —
+  see [Open questions](#open-questions) for the formal resolution of OQ3.
+- **Two of the app's most sensitive capabilities are now concentrated behind one operator (decision
+  D11).** Extending the traffic source (D10) to routing means the single most sensitive pair of
+  coordinates this app ever handles — origin and destination, together — also reaches Waze/Google,
+  under the same terms D10 already accepted. This is a known, accepted cost recorded in
+  `docs/adr/003-routing-engine.md` and `docs/roadmap.md`, not an oversight.
+- **No offline routing (decision D11).** Every route computation and every v0.2 reroute is a live
+  remote call to the same operator as the traffic flow; there is no fallback once connectivity is
+  lost. `RouteProvider` stays abstract so an on-device engine remains addable later as an offline
+  mode, but nothing in this milestone builds one.
+- **Route geometry's exact field names need their own verification step before the routing adapter
+  is written.** Route geometry is in scope (FR-5) and always was — this milestone cannot draw a
+  route on the map without it. What is unverified is only the wire shape: the recon behind decisions
+  D10–D16 found that Waze's routing response controls geometry inclusion via a request flag, but no
+  independently-maintained source examined actually parses the geometry field once returned — every
+  wrapper the recon read disables that flag and reads only scalar time/distance, since none of them
+  need geometry. Treat the *existence* of geometry as verified; treat the *exact raw field names and
+  nesting* as needing a throwaway request/response capture against a test build (by the maintainer
+  or developer) before test 112 onward is written against them — not something settled by reading
+  documentation alone, and not something an agent does unilaterally. This is a narrower, purely
+  technical caveat than the turn-by-turn exclusion above; it does not put geometry itself out of
+  scope.
 - **Destination text is the highest-sensitivity payload in this milestone**, and decision D3
   makes it worse than a single-shot search would: because suggestions fire on every debounced
   keystroke burst (FR-21), partial strings — including text the user typed and then deleted —
@@ -703,9 +1035,13 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
   while driving with the screen off will be surprised; this is correct per the brief for v0.1,
   but UI copy should make the limitation visible rather than silent. Not a functional
   requirement of this spec — flagged for UX consideration.
-- **Third-party politeness.** v0.1 issues no periodic/background calls (every call is
-  user-triggered), so no additional rate-limiting design is needed yet beyond FR-17/FR-21's
-  debounce; this changes at v0.3 once traffic queries become tied to an ongoing trip.
+- **Third-party politeness.** v0.1's traffic/jam flow is user-triggered, never on a timer, but is
+  now additionally throttled to a five-minute minimum interval per area, with overlapping areas
+  coalesced (FR-35, FR-36, decision D12) — a self-imposed floor, since no rate limit for this
+  endpoint was found published anywhere by the recon that informed this decision (not the same
+  claim as "none exists" — see `docs/adr/005-traffic-source-integration.md`). This is stricter than
+  FR-17/FR-21's debounce alone required before this decision; it changes further at v0.3 once
+  traffic queries become tied to an ongoing trip.
 
 ## Open questions
 
@@ -715,10 +1051,13 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
   scope by default.
 - **OQ2 — human decision required.** What location accuracy/update interval is "coarse enough"
   to place the user on the route (tests 29, 55)? No figure is given in the brief.
-- **OQ3 — human decision required.** Are traffic-for-routing-cost (FR-4) and
-  traffic-incidents-for-display (FR-6) the same provider call, or two independent ones? This
-  depends entirely on the outcome of `003-routing-engine` and `005-traffic-source-integration`
-  and changes the error-state count in FR-11/FR-12 and the Stage F test count.
+- **OQ3 — resolved by decisions D10/D11/D13, not reopened here.** Are traffic-for-routing-cost
+  (FR-4) and traffic-incidents-for-display (FR-6) the same provider call, or two independent ones?
+  **Two independent port calls**: `RouteProvider` (route + both durations) and the widened
+  `TrafficIncidentProvider` (incidents + congested segments), even though both are now backed by the
+  same operator (Waze). The recon behind D10–D16 found no evidence the two wire requests can be
+  merged into one. FR-11 and FR-12's existing two-error-state design already matches this outcome,
+  so no re-baselining was needed.
 - **OQ4 — human decision required.** Does v0.1 show more than one route alternative, or exactly
   one? The brief says "a route," singular; this spec assumes exactly one.
 - **OQ5 — human decision required.** Must the relay setting expose the full mode set (direct/no
@@ -740,10 +1079,13 @@ provider, tile source, or HTTP client — only a fake of the port it wraps).
 **Resolved since the previous revision, not reopened here:** the relay default/egress-blocking
 behaviour and its persistence mechanism (formerly open, now D1/D2), the destination-search
 debounce/minimum-length figures (resolved by D3 into FR-17/FR-21, no longer tracked under any open
-question here), and whether local response caching for geocoding/traffic is permitted at all
-(resolved by D9 — it is; only the figures in OQ7 remain open). See the maintainer's decision record
-for the full reasoning; D5 and the round-2/round-3 decision records list what is still genuinely
-open beyond OQ1–OQ7 above.
+question here), whether local response caching for geocoding/traffic is permitted at all (resolved
+by D9 — it is; only the figures in OQ7 remain open), the traffic/incident source and its integration
+architecture (resolved by D10/D12/D13/D14/D15, recorded as `docs/adr/005-traffic-source-
+integration.md`), the routing engine (resolved by D11, recorded as `docs/adr/003-routing-engine.md`
+— the costs accepted are recorded there and in `docs/roadmap.md`, not hidden), and OQ3 above. See
+the maintainer's decision record for the full reasoning; D5 and the round-2/round-3 decision records
+list what is still genuinely open beyond OQ1, OQ2, OQ4–OQ7 above.
 
 **Known gap, not a decision to make — tracked so it is not mistaken for an oversight:** no
 accessibility or string-resource inventory exists yet anywhere in this project. This spec's

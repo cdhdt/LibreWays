@@ -2,11 +2,14 @@
 
 ## Status
 
-`proposed`
+`superseded by 003-routing-engine.md` (accepted, decision D11) — this brief's analysis led directly
+to that decision; it is kept here as the record of the analysis, per `docs/adr/README.md`'s
+lifecycle, and is no longer itself open. Do not treat anything below as inviting a re-open.
 
-**This is the highest-stakes open decision in the product**: it determines whether the single
+**This was the highest-stakes open decision in the product**: it determined whether the single
 most sensitive fact this app ever handles — a user's origin and destination, together, in one
-place, at one time — ever leaves the device.
+place, at one time — would ever leave the device. It has been decided: see
+[`../003-routing-engine.md`](../003-routing-engine.md) for the decision and its accepted costs.
 
 ## Context
 

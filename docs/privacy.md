@@ -50,14 +50,14 @@ reporting" roadmap item is explicitly out of scope for this document until it is
 Before anything reassuring: LibreWays is a **client of third-party services it does not control**.
 Using its core features necessarily sends network requests to those services. Concretely:
 
-1. **Requests leave the device.** Rendering a map, searching for a destination, reading traffic
-   incidents, and — depending on an undecided architecture choice — computing a route, all require
-   contacting an external server. That server sees, at minimum, the requester's IP address (or the
-   relay's, if one is configured) and the data the feature needs to send.
+1. **Requests leave the device.** Rendering a map, searching for a destination, reading traffic and
+   congestion data, and computing a route — the last two now both to Waze/Google, decisions D10/D11
+   — all require contacting an external server. That server sees, at minimum, the requester's IP
+   address (or the relay's, if one is configured) and the data the feature needs to send.
 2. **We cannot audit third-party servers.** Once a well-formed request reaches the tile provider,
-   the geocoding provider, the traffic provider, or a remote routing provider, we have no visibility
-   into what that operator logs, retains, correlates, or shares. We can only control what we send,
-   not what happens to it afterwards.
+   the geocoding provider, or Waze (traffic, congestion, and routing), we have no visibility into
+   what that operator logs, retains, correlates, or shares. We can only control what we send, not
+   what happens to it afterwards.
 3. **A relay hides the requester's IP, not the request content.** Routing traffic through Tor, a
    proxy, or a self-hosted instance stops the destination provider from learning the user's network
    origin. It does not stop the provider from seeing the query itself (a search string, a viewport,
@@ -65,8 +65,9 @@ Using its core features necessarily sends network requests to those services. Co
    resourced adversary doing traffic-timing correlation against the relay network itself; see
    `docs/threat-model.md`.
 4. **Some data cannot be coarsened without breaking the feature.** A destination search string must
-   be sent as typed for geocoding to work. If a remote routing shape is chosen (see below), the
-   origin and destination coordinates must be precise enough to route correctly — coarsening them
+   be sent as typed for geocoding to work. The routing origin and destination coordinates must be
+   precise enough to route correctly — this is now certain, not conditional (decision D11): every
+   route computation sends them to Waze/Google together, at full precision — coarsening them
    materially degrades or breaks the result. Precision reduction is a real mitigation for viewport
    and traffic queries; it is not a free option everywhere.
 5. **We cannot protect an unlocked, physically accessed, or compromised device.** Local storage
@@ -84,46 +85,57 @@ Everything that follows describes what the app does; it does not change the limi
 
 | Flow | Third party | What is sent | Precision | Trigger | Local storage | Relay-eligible | Sensitivity |
 |---|---|---|---|---|---|---|---|
-| (a) Traffic endpoint | Traffic data source (ADR pending) | Viewport or route-corridor area, IP | Coarsened bounding box/corridor | Map/traffic layer visible, active trip | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) | Yes | High |
-| (b) OSM tile provider | Tile provider (ADR pending) | Tile coordinates (z/x/y) for visible area, IP | Tile-grid quantised | Map on screen | On-disk tile cache (size/TTL-bounded) | Yes | Medium |
-| (c) Geocoding / place search | Geocoding provider (ADR pending) | Free-text search string per debounced keystroke burst (including deleted partial strings), optional viewport bias, IP | Full text precision — not coarsenable | Repeatedly per trip: each debounced keystroke burst past 3 characters (600 ms debounce, decision D3) — not once per search | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) — the most sensitive local artefact in the app, bound to the same standard as the tile cache, not a looser one | Yes | Highest — certain (unconditional on any pending ADR) |
-| (d) Routing | Shape undecided (ADR-003) | Origin + destination, or nothing (see below) | Depends entirely on shape | User requests a route; reroute | Active-route geometry, session-only | Yes, where a remote endpoint exists at all | Conditional — worst *individual* disclosure if a remote API is chosen, but ranked below geocoding overall since that risk is not yet certain (see Sensitivity ranking) |
+| (a) Traffic and congestion endpoint | **Waze/Google** (decision D10; `docs/adr/005-traffic-source-integration.md`) | Viewport or route-corridor area, IP — one request returns both community incident reports and congested-segment (jam) data (decision D13) | Coarsened bounding box/corridor | Map/traffic layer visible, active trip; no more than once per five minutes for a given area, overlapping areas coalesced (decision D12) | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) | Yes | Moderate — third of five, see re-stated ranking below |
+| (b) OSM tile provider | Tile provider (ADR pending) | Tile coordinates (z/x/y) for visible area, IP | Tile-grid quantised | Map on screen | On-disk tile cache (size/TTL-bounded) | Yes | Lowest of the four network flows |
+| (c) Geocoding / place search | Geocoding provider (ADR pending) | Free-text search string per debounced keystroke burst (including deleted partial strings), optional viewport bias, IP | Full text precision — not coarsenable | Repeatedly per trip: each debounced keystroke burst past 3 characters (600 ms debounce, decision D3) — not once per search | On-disk response cache (size/TTL-bounded, LRU), from v0.1 (decision D9) — the most sensitive local artefact in the app, bound to the same standard as the tile cache, not a looser one | Yes | High — certain, but no longer the single worst flow, see re-stated ranking below |
+| (d) Routing | **Waze/Google** — the same operator as flow (a) (decision D11; `docs/adr/003-routing-engine.md`) | Origin + destination together, at full precision, in one request; that same request also returns a traffic-aware and a traffic-free duration (decision D11) | Full precision — not coarsenable | User requests a route; reroute | Active-route geometry, session-only | Yes | **Highest — now certain, not conditional; the single worst flow, see re-stated ranking below** |
 | (e) Device GPS | None — on-device only | Nothing directly | N/A | Foreground use, active guidance | In-memory only | N/A | Feeds into (a)–(d) |
 
 ## Sensitivity ranking
 
-**Re-stated after decision D3** (autocomplete-with-debounce for geocoding): the previous version of
-this ranking placed geocoding second, below routing, on the reasoning that it was the strongest
-*single-event* signal but only fired once per search. That reasoning no longer holds. Geocoding now
-fires **repeatedly per trip** — a debounced query per keystroke burst, including partial strings the
-user typed and then deleted — rather than once. A sequence of full-precision, uncoarsenable intent
-disclosures is a materially worse exposure than a single one, so geocoding moves up:
+**Re-stated again after decision D11** (Waze-backed routing accepted, `docs/adr/003-routing-engine.md`):
+the previous version of this ranking (itself re-stated after decision D3) placed geocoding first and
+routing second, on the reasoning that geocoding's elevated risk was certain to exist while routing's
+was conditional on an ADR that had not been accepted. That conditionality is now resolved: ADR-003 is
+`accepted`, so a routing request stating origin and destination together, at full precision, is now
+**certain** to occur on every route request and every reroute — not a hypothetical worst case. The
+previous ranking already recognised that, per event, a routing request is a more precise and complete
+disclosure than any individual geocoding query (a specific trip's exact start and endpoint together,
+versus a single search string). With both flows now certain to exist, per-event severity becomes the
+deciding factor, and routing moves to the top of this ranking. This is stated explicitly, not left as
+the previous ordering would imply:
 
 From worst to least sensitive, and why:
 
-1. **Geocoding / place search — now the worst flow that is certain to exist.** Not conditional on
-   any pending decision (unlike routing below): every build ships autocomplete-as-you-type
-   (decision D3). Each debounced keystroke burst is a query, at full text precision, that cannot be
-   coarsened without breaking the feature. Repeated firing during a single destination search means
-   this is no longer one intent disclosure but a **sequence** of them — including abandoned,
-   deleted candidate strings that never became the final search — compounding the risk described in
-   the previous ranking's single-event framing rather than replacing it. Its v0.1 on-disk response
-   cache (decision D9) adds a second, local dimension to this same top-ranked risk: unlike the
-   network disclosure, which only the geocoding provider (and a relay, if not used) can see, the
-   cache is a physical-access risk — a device examined while the cache still holds an entry
-   discloses the same intent without any network capture at all.
-2. **Routing, if a remote third-party API is the chosen shape (ADR-003) — still potentially the
-   single worst individual disclosure in the app, but entirely conditional on an undecided
-   decision.** A single request states origin and destination together, at the full precision
-   routing correctness requires — an unambiguous, precise statement of a specific trip in progress,
-   repeated on every reroute. In absolute per-event terms this can be worse than any individual
-   geocoding query. Whether this adversary exists **at all** depends on an ADR that has not been
-   accepted — see [Routing](#d-routing--shape-undecided) below. Ranked below geocoding here only
-   because geocoding's elevated risk is now certain and routing's is not; if the remote-API shape is
-   chosen, re-evaluate this ordering in the same pull request that accepts the ADR.
-3. **Traffic endpoint.** A single request is comparatively low-information (a viewport or corridor),
-   but a *sequence* of requests during a trip approximates the route travelled. Inference risk is
-   cumulative, not per-request.
+1. **Routing — now the single worst flow, and certain to exist (decision D11).** A request states
+   the precise origin and destination together, in one place, at the full precision routing
+   correctness requires — an unambiguous, complete statement of a specific trip in progress, repeated
+   on every reroute (v0.2 onward). This is worse per-event than any individual geocoding query, and,
+   unlike the previous revision of this document, it is no longer conditional on an undecided ADR: it
+   is what v0.1 ships. It is additionally concentrated behind the same operator as flow (a) below
+   (decision D10), which is a further, distinct cost recorded in `docs/adr/003-routing-engine.md` and
+   `docs/roadmap.md` — not a privacy mitigant, and not counted twice in this ranking, but worth
+   naming here since it is why this flow's exposure cannot be treated as isolated from flow (a)'s.
+2. **Geocoding / place search — still discloses the same intent repeatedly across a search, now
+   second by this ranking's per-event/certain-existence logic.** ("Repeatedly" here means once per
+   destination search, as a sequence of debounced queries — not a claim that geocoding fires more
+   often in absolute terms than every other flow; the tile flow's raw request rate is higher, per
+   `docs/threat-model.md` adversary 3, since it fires on every pan/zoom rather than only while
+   typing a destination.) Every build ships autocomplete-as-you-type (decision D3).
+   Each debounced keystroke burst is a query, at full text precision, that cannot be coarsened
+   without breaking the feature. Repeated firing during a single destination search means this is a
+   **sequence** of disclosures, not one — including abandoned, deleted candidate strings that never
+   became the final search. Its v0.1 on-disk response cache (decision D9) adds a second, local
+   dimension to this risk: unlike the network disclosure, which only the geocoding provider (and a
+   relay, if not used) can see, the cache is a physical-access risk — a device examined while the
+   cache still holds an entry discloses the same intent without any network capture at all.
+3. **Traffic and congestion endpoint — Waze/Google (decision D10).** A single request is
+   comparatively low-information (a viewport or corridor), but a *sequence* of requests during a trip
+   approximates the route travelled. Decisions D13/D14 add detail about *what* is disclosed per area
+   (which reliability-rated incidents and jam levels were present) without changing *that* a sequence
+   of areas is disclosed — inference risk remains cumulative, not per-request. The five-minute
+   minimum interval and area-coalescing (decision D12) reduce request *volume*, not the sensitivity
+   of any individual request that does fire.
 4. **OSM tile provider.** Same trajectory-revealing risk class as the traffic endpoint through
    request sequences, generally less tied to a specific active route than the traffic layer, and
    partially mitigated by caching (fewer repeat requests). Its main residual risk is the on-disk tile
@@ -142,17 +154,23 @@ mitigations below.
 
 ## Detailed flows
 
-### (a) Third-party traffic endpoint
+### (a) Traffic and congestion endpoint — Waze/Google
+
+**Recipient, named per decision D10** (`docs/adr/005-traffic-source-integration.md`): this flow's
+requests go to infrastructure operated by **Waze/Google**. "A third party" is no longer accurate
+enough for an auditor now that the source is known; naming it here is required by the honesty rule
+this document is built on, not branding — see `README.md`'s non-affiliation disclaimer, unchanged.
 
 | | |
 |---|---|
-| Sent | Current map viewport bounding box, or the corridor around an active route; IP address; a generic app identifier (name + version) in the request's User-Agent |
+| Sent | Current map viewport bounding box, or the corridor around an active route; IP address; a generic app identifier (name + version) in the request's User-Agent. One request returns both community incident reports and congested-segment (jam) data for the area (decision D13) — this adds detail to an existing flow, not a new recipient or a new request |
 | Precision | Coarsened to the visible map area or route-corridor buffer — never a raw GPS point |
-| Frequency | On viewport change past a debounce threshold, while the traffic/incidents layer is shown; periodically along the corridor ahead during an active trip (v0.3 traffic-aware ETA) |
+| Frequency | On viewport change past a debounce threshold, while the traffic/incidents layer is shown; periodically along the corridor ahead during an active trip (v0.3 traffic-aware ETA); no more than once every five minutes for a given area, served from cache in between, with overlapping areas coalesced into one request (decision D12) |
 | Trigger | User has the traffic layer visible, or is navigating |
 | Local storage | On-disk response cache, size- and TTL-bounded (LRU eviction), **from v0.1** (decision D9 — this is decided, not a v0.4 candidate). Not encrypted at rest. Excluded from Android Auto Backup and Data Extraction Rules; user-clearable (`docs/specs/001-navigation-mvp.md` FR-27–FR-31) |
-| Observer inference | A single request is low-information; a sequence over the duration of a trip approximates the route travelled. The cache itself, examined on the device, reveals recently-viewed traffic areas without needing to capture network traffic — a physical-access risk, not only a network one |
-| Mitigation | Relay-eligible by construction; viewport coarsening; no session identifier; debounce on pan/zoom; polite rate limiting respecting the provider's usage policy; the bounded, user-clearable, backup-excluded response cache reduces repeat requests (decision D9) |
+| Observer inference | A single request is low-information; a sequence over the duration of a trip approximates the route travelled — now also including which reliability-rated incidents (subtype, confirmation count, reporter-trust band, confidence, age — decision D14) and congestion levels (decision D13) were present in each area. This is additional detail about *what* is disclosed per area, not a new *recipient* or a new *kind* of disclosure. The cache itself, examined on the device, reveals recently-viewed traffic areas without needing to capture network traffic — a physical-access risk, not only a network one |
+| Mitigation | Relay-eligible by construction; viewport coarsening; no session identifier; debounce on pan/zoom; a self-imposed five-minute minimum request interval per area and coalescing of overlapping-area requests (decision D12), since no rate limit for this endpoint was found published anywhere by the recon behind this decision (an absence of evidence, not evidence that none exists); the bounded, user-clearable, backup-excluded response cache reduces repeat requests (decision D9) |
+| Data source's own risk exposure | Waze's terms grant a personal, non-commercial, revocable, non-transferable, non-sub-licensable licence; its data is a protected database under EU law; the endpoints used are undocumented and may change or be withdrawn without notice. The maintainer has accepted this exposure as a known risk — see `docs/adr/005-traffic-source-integration.md` and `docs/roadmap.md` — it is not hidden and not an open question |
 
 ### (b) OSM tile provider
 
@@ -182,29 +200,32 @@ knowledge of the cost stated plainly below — this is not softened.
 | Mitigation | Relay-eligible by construction; no query text or candidate ever reaches **logcat** (distinct from the on-disk cache, which is a bounded, evictable, backup-excluded store, not a log — decision D9); the 3-character/600 ms/cancel-in-flight/no-whitespace mitigations above; no side-channel (e.g. no separate analytics call carrying the same string); the cache is bound to the same size/TTL/LRU/clearable/backup-excluded standard as the tile cache, not a looser one, precisely because this is the most sensitive artefact of the three. These mitigations reduce the *number* of partial-intent strings sent, and cut short abandoned typing early — they do not reduce the sensitivity of whichever string is actually sent, nor prevent a genuinely typed-then-deleted 3+ character string from reaching the provider once the debounce window has elapsed |
 | Consequence for ADR 004 | A public geocoding instance whose usage policy forbids autocomplete-style querying is effectively excluded by this product decision, which narrows the viable backends toward a self-hosted geocoder — see `docs/adr/proposals/004-geocoding-provider.md`. This document does not pick the backend; that remains the maintainer's decision |
 
-### (d) Routing — shape undecided
+### (d) Routing — Waze/Google (decision D11)
 
-Three candidate shapes are under evaluation in `docs/adr/proposals/003-routing-engine.md`. Nothing
-here selects one; the human decides, and this document is updated once an ADR is accepted. The
-three shapes have radically different privacy profiles, and that is precisely why this is flagged
-as the highest-stakes open decision in the whole document:
-
-| Shape | What leaves the device | Who sees origin+destination together |
-|---|---|---|
-| On-device routing engine over a locally held/downloaded routing graph | Nothing per route calculation. Only a one-time or periodic regional map/graph *download* touches the network, and that download is for an area, not a trip | Nobody |
-| Self-hosted routing instance the user points the app at | Origin and destination do leave the device | Only the operator of that instance — infrastructure the user explicitly chose and, presumably, trusts |
-| Third-party remote routing API | Origin and destination leave the device together, at full precision, in one request | An external operator outside the user's control, unless relayed for IP — the coordinates themselves are still disclosed to them |
-
-Common to all three shapes, whatever is finally chosen:
+**Settled, `docs/adr/003-routing-engine.md`.** v0.1's `RouteProvider` is backed by Waze's own
+routing endpoint — the same operator named for the traffic/congestion flow, (a) above (decision
+D10). This was the highest-stakes open decision in this document; it is now resolved, and the costs
+are recorded here plainly, not softened:
 
 | | |
 |---|---|
+| Sent | Origin and destination coordinates together, at full precision, in one request; IP address; generic User-Agent |
+| Recipient | Waze/Google — the same operator as flow (a). This is a deliberate, accepted concentration of two of the app's most sensitive capabilities behind one third party's terms, logging policy, and licence (D10's own terms: personal, non-commercial, revocable, non-transferable, non-sub-licensable), not a coincidence of implementation |
+| Precision | Full precision. **Cannot be coarsened** without breaking the feature — routing correctness requires exact coordinates, unlike the traffic and tile flows |
 | Frequency | On each route request, and on each reroute (off-route recalculation, v0.2) |
 | Trigger | User requests a route, or the app detects the user left the planned route |
+| What this same request also returns | The route geometry, a traffic-aware duration (`durationWithTraffic`), and a traffic-free duration (`durationWithoutTraffic`); the app computes the displayed traffic delay client-side as their difference — never received from Waze or estimated separately (decision D11) |
 | Local storage | The computed route geometry is held for the duration of the active trip (needed for turn-by-turn display) and should not outlive the trip unless the user explicitly saves it (v0.4 saved trips, opt-in) |
-| Mitigation, if a remote shape is chosen | Relay-eligible by construction is the only mitigation available for IP exposure. **No coarsening mitigation exists here**: routing correctness requires precise coordinates, so — unlike the traffic and tile flows — precision cannot be traded away without breaking the feature. This is stated plainly rather than glossed over |
+| Mitigation | Relay-eligible by construction is the only mitigation available for IP exposure. **No coarsening mitigation exists here**, exactly as before this decision: routing correctness requires precise coordinates, so precision cannot be traded away without breaking the feature |
+| What this decision does not provide | No offline routing exists in this milestone or the next — every route computation and reroute is a live remote call, with no fallback once connectivity is lost. `RouteProvider` stays abstract so an on-device engine remains addable later as an offline mode, but nothing in this design builds one now |
+| Data source's own risk exposure | The same terms named for flow (a) — personal, non-commercial, revocable, non-transferable, non-sub-licensable licence; protected database under EU law; undocumented, may-change-without-notice endpoints — now apply to this flow too, as its own, separately accepted commitment (core routing functionality, not a supplementary overlay). The maintainer accepted this knowingly — see `docs/adr/003-routing-engine.md` and `docs/roadmap.md` — it is not hidden and not an open question |
 
-**Open question — human decision required:** which of the three shapes is adopted (`docs/adr/proposals/003-routing-engine.md`). Until decided, this document cannot state whether flow (d) leaks nothing or leaks the single most sensitive disclosure in the app — both are real possible outcomes of the same feature.
+**Settled (decision D11), previously the single open question in this section:** which shape is
+adopted. It is Waze's own routing endpoint — the "third-party remote routing API" shape this section
+previously described as one of three candidates. The other two candidates (on-device engine,
+project-operated self-hosted service) were not chosen for v0.1; `docs/adr/003-routing-engine.md`
+records the full trade-off analysis and the reasoning, including why an on-device engine remains
+addable later without touching `domain` or `presentation`.
 
 ### (e) Device GPS — on-device only
 
@@ -212,7 +233,7 @@ Common to all three shapes, whatever is finally chosen:
 |---|---|
 | Sent over network | Nothing directly. Raw GPS fixes never leave the device |
 | On-device handling | Read from the OS location API, foreground only. v0.1: a low-frequency fix to place a "you are here" marker. v0.2: continuous fixes during active guidance, via a foreground service (see permissions below) |
-| Derived exposure | The current position, coarsened, becomes: the origin parameter of a routing request (flow d — at full precision if a remote shape is chosen, since routing cannot use a coarsened origin without degrading results); a factor in the viewport sent to the tile/traffic providers when the map is centred on the user; a bias parameter for geocoding autocomplete (flow c) |
+| Derived exposure | The current position, coarsened, becomes: the origin parameter of a routing request (flow d — at full precision, decision D11, since routing cannot use a coarsened origin without degrading results); a factor in the viewport sent to the tile/traffic providers when the map is centred on the user; a bias parameter for geocoding autocomplete (flow c) |
 | Precision requested from the OS | Should be the coarsest accuracy that satisfies the active feature (e.g. not requesting the finest available fix when a coarser one suffices) — this is an implementation choice for the developer spec, flagged here as a review item, not yet a fixed value |
 | Local storage | Not persisted beyond the current session/trip. No location history is built in v0.1–v0.3. A "trip history" feature is out of scope until v0.4+ and, if ever proposed, is opt-in, explicit, and independently deletable |
 | Mitigation | Foreground-only permission, never background; fixes held in memory, not written to disk; coarsened before being handed to any outbound flow that can tolerate coarsening |
@@ -225,7 +246,8 @@ reading the code, not by trusting a claim:
 1. **User-selectable relay applied to every outbound request by construction, with an explicit
    choice required and a fail-closed failure mode (decision D1).** The networking layer has a
    single egress point (or a small, enumerable set of them) through which all HTTP traffic to tile,
-   traffic, geocoding, and — if a remote shape is chosen — routing providers is routed. There must
+   traffic, geocoding, and routing (Waze/Google, decision D11 — remote and certain, not conditional)
+   providers is routed. There must
    be no code path that constructs a network client bypassing that egress point. A code reviewer
    should be able to grep for HTTP client construction and find exactly the sanctioned
    factory/factories, nowhere else. The domain's `RelayConfiguration` has no "unset means direct"
@@ -254,15 +276,20 @@ reading the code, not by trusting a claim:
    none is encrypted at rest, stated plainly rather than implied protected. The geocoding cache is
    held to the same standard as the other two, not a looser one, because it is the most sensitive
    of the three artefacts.
-8. **Polite rate limiting.** Requests respect the target provider's published usage policy;
-   failures back off rather than retry in a tight loop.
+8. **Polite rate limiting.** Requests respect the target provider's published usage policy where
+   one exists. For the traffic, congestion, and routing flows (Waze/Google, decisions D10/D11), no
+   such policy was found published anywhere by the recon behind those decisions — an absence of
+   evidence, not confirmation that none exists — so a self-imposed five-minute minimum interval and
+   request coalescing apply instead (decision D12, `docs/adr/005-traffic-source-integration.md`).
+   Failures back off rather than retry in a tight loop, for every flow regardless of whether a
+   published policy exists.
 
 ## Permissions
 
 | Permission | Introduced at | Why unavoidable | If the user denies it | Notes |
 |---|---|---|---|---|
-| `INTERNET` | v0.1 | Required by every documented network flow (tiles, traffic, geocoding, and routing if a remote shape is chosen) | Not user-revocable at runtime on stock Android — it is granted at install and has no runtime prompt. A user can still block it via a device-level firewall or flight mode | The app must degrade to an offline/no-network state without crashing or busy-retrying when connectivity is unavailable |
-| `ACCESS_FINE_LOCATION` | v0.1 | Needed to place the user's own position on the map/route, and — if a remote routing shape is chosen — to supply an accurate origin | Search and route preview remain usable without a live position marker; the app must not crash and must not silently substitute a lower-quality location proxy (e.g. IP-based geolocation) as a workaround | Requested at first use of the position feature, not at app launch |
+| `INTERNET` | v0.1 | Required by every documented network flow (tiles, traffic, geocoding, and routing — decision D11 makes routing certain, not conditional) | Not user-revocable at runtime on stock Android — it is granted at install and has no runtime prompt. A user can still block it via a device-level firewall or flight mode | The app must degrade to an offline/no-network state without crashing or busy-retrying when connectivity is unavailable |
+| `ACCESS_FINE_LOCATION` | v0.1 | Needed to place the user's own position on the map/route, and to supply an accurate origin to the routing flow (decision D11: certain, not conditional) | Search and route preview remain usable without a live position marker; the app must not crash and must not silently substitute a lower-quality location proxy (e.g. IP-based geolocation) as a workaround | Requested at first use of the position feature, not at app launch |
 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_LOCATION` | v0.2 | Turn-by-turn guidance needs continuous location while the screen may be off or the app is not the foreground activity; Android requires this service sub-type for that | Guidance/turn-by-turn is unavailable; the app can fall back to a static route the user must keep the app open and foregrounded to follow | The mandatory ongoing notification for a foreground service is the transparency mechanism that substitutes for requesting background location |
 | `POST_NOTIFICATIONS` | v0.2 | Android 13+ requires this permission for the app to display the guidance foreground-service notification | **Open question — human decision required**: exact platform behaviour when denied (whether the OS still forces a foreground-service notification without this permission) depends on Android version and must be confirmed in the v0.2 spec | Requested only when guidance is first started |
 
@@ -360,15 +387,22 @@ of these without a corresponding update here is incomplete, not merely undocumen
 
 ## Open questions
 
-- **Open question — human decision required:** which routing shape is adopted (on-device engine,
-  self-hosted instance, or third-party remote API) — `docs/adr/proposals/003-routing-engine.md`.
-  This is the single highest-stakes privacy decision left in the product.
+- **Settled (decision D11) — routing shape.** Routing is Waze-backed — the same operator as the
+  traffic/congestion flow (decision D10) — recorded as `docs/adr/003-routing-engine.md`. This was
+  the single highest-stakes privacy decision left in the product; it is resolved, with its costs (no
+  offline routing, two sensitive capabilities behind one operator, origin+destination leaving
+  together at full precision) accepted and recorded there, not hidden. See the re-stated Sensitivity
+  ranking above, where this flow now ranks first.
 - **Open question — human decision required:** concrete tile source and rendering choice —
   `docs/adr/proposals/002-map-rendering-and-tiles.md`.
 - **Open question — human decision required:** concrete geocoding provider —
   `docs/adr/proposals/004-geocoding-provider.md`.
-- **Open question — human decision required:** concrete traffic source and its rate-limiting
-  parameters — `docs/adr/proposals/005-traffic-source-integration.md`.
+- **Settled (decision D10) — traffic/congestion source; partially settled (decision D12) —
+  politeness.** The source is Waze — recorded as `docs/adr/005-traffic-source-integration.md` — and
+  the minimum interval between two requests covering the same area is fixed at **five minutes**,
+  with overlapping areas coalesced into one request. **Still open:** the traffic response cache's own
+  size cap and time-to-live (OQ7 in `docs/specs/001-navigation-mvp.md`, decisions D7/D9) — a distinct
+  parameter from the five-minute politeness floor, not settled by D12.
 - **Open question — human decision required:** concrete relay/proxy implementation, and whether it
   is offered as an equally-weighted user choice among Tor/HTTP/SOCKS/self-hosted, or one is a
   suggested default — `docs/adr/proposals/007-relay-and-proxy.md`.
