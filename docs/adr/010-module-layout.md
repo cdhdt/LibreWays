@@ -108,3 +108,28 @@ module is unusual and not anticipated). Splitting `:app` further into `:data`/`:
 modules later is the anticipated direction of change and is cheap: the responsibility boundaries
 `docs/architecture/README.md` §2 already defines do not change, only how they are compiled and
 packaged, exactly as the proposal brief's own reversibility analysis for Option C already states.
+
+## Addendum — `minSdk`, `compileSdk`/`targetSdk` (added during review of the build-skeleton PR)
+
+Scaffolding the `:app` module required two Android SDK-level values this ADR had not itself
+addressed. Recorded here, alongside the module-layout decision, rather than left as unreviewed
+version-catalog entries.
+
+- **`minSdk = 26` (Android 8.0 "Oreo") is a real product decision, not an incidental default.**
+  API 26 was chosen as the floor because it covers the large majority of devices actually in active
+  use while this project's stated audience (privacy-conscious users on GrapheneOS/de-Googled
+  devices, CLAUDE.md §0) runs comparatively recent hardware — a floor lower than 26 would mean
+  carrying compatibility shims for a shrinking, and for this audience specifically unlikely, tail of
+  devices. This is not re-litigated per feature; a future feature needing a higher floor states so
+  explicitly against this baseline.
+- **`compileSdk`/`targetSdk` were first set to `37`, unverified, and that was a defect caught in
+  review.** Checked directly against Google's SDK repository manifest
+  (`https://dl.google.com/android/repository/repository2-3.xml`) at the time of this addendum: no
+  plain `platforms;android-37` package exists — only fractional/preview packages
+  (`android-37.0`, `android-37.1`, both stable-channel but fractional; `android-37.2-beta1`, a named
+  preview with codename `CinnamonBun`). AGP's `compileSdk` is a plain integer and resolves against a
+  plain `android-<int>` platform package; `37` would have failed to resolve on any machine that
+  actually has the SDK installed, which is exactly why the mistake was invisible in an environment
+  with no SDK at all. The latest **released, stable, plain-integer** platform verified in that
+  manifest is `platforms;android-36` (`channelRef` `channel-0`, i.e. stable; no codename). Both
+  `compileSdk` and `targetSdk` are corrected to `36`.
