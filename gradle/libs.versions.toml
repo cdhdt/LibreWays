@@ -1,0 +1,33 @@
+[versions]
+# Build tools
+kotlin = "2.4.10"
+android-gradle-plugin = "9.3.1"
+
+# Static analysis (ADR 012 — blocking in CI)
+ktlint-gradle = "14.2.0"
+detekt = "1.23.8"
+
+# Test tooling (ADR 012)
+junit4 = "4.13.2"
+
+# Android compile/target (no UI toolkit dependency — ADR 001 is still open).
+# 36 is the latest *released, stable, plain-integer* platform verified against Google's SDK
+# repository manifest at the time of writing — no plain "android-37" package exists there at all,
+# only fractional/preview ones (android-37.0, android-37.1, android-37.2-beta1); see
+# docs/adr/010-module-layout.md's addendum for exactly what was and was not verified. minSdk 26
+# (Android 8.0) is decision D-minsdk, recorded in the same addendum: it covers the large majority
+# of active devices while this project's target audience runs recent hardware.
+compile-sdk = "36"
+min-sdk = "26"
+target-sdk = "36"
+
+[libraries]
+junit4 = { module = "junit:junit", version.ref = "junit4" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+android-application = { id = "com.android.application", version.ref = "android-gradle-plugin" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-gradle" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

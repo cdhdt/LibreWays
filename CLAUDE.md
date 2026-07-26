@@ -50,7 +50,11 @@ non-negotiables, recommendation) and the **human decides**; the decision is then
 
 UI toolkit (Compose vs Views) · map rendering and tile source · local persistence (Room vs
 SQLDelight vs plain SQLite) · HTTP and serialisation stack · background scheduling strategy ·
-module layout · CI setup and reproducible-build pipeline.
+CI setup and reproducible-build pipeline.
+
+Module layout was on this list and is now decided — see `docs/adr/010-module-layout.md`
+(`:domain`/`:app`, two Gradle modules) — and is removed from here accordingly; this is a factual
+correction to keep this list matching `docs/adr/README.md`'s index, not a reopening of anything.
 
 An agent that needs one of these before an ADR exists **stops and asks** — it does not pick
 silently, and it does not treat a brainstorming transcript as a decision.
@@ -115,6 +119,14 @@ When work needs splitting, the orchestrator has the issue bodies drafted, **pres
 human in full, and posts nothing until the human explicitly approves.** No exceptions.
 
 ### Step 3 — Development (`dev-tdd`)
+
+**Isolated worktree, always.** Every `dev-tdd` dispatch runs in its own git worktree, checked out
+fresh, never in a working checkout shared with any other agent or task. Earlier in this project,
+two agents doing development work in the same shared checkout switched branches under each other
+mid-task; each agent's branch switch silently rewrote the other's working tree, producing real,
+hard-to-diagnose defects that had nothing to do with either agent's actual change. Worktree
+isolation removes the failure mode structurally — parallel work simply cannot collide on the same
+files — rather than relying on agents to coordinate or take turns.
 
 1. `git fetch origin && git switch -c <type>/<slug> origin/develop` — always branch off `develop`.
 2. **TDD, strictly**: write the failing test, see it fail, make it pass minimally, refactor.
