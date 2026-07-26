@@ -14,12 +14,14 @@ and leak-risk item 5 below). **The transport mechanism itself (Option A/B/C) rem
 
 `CLAUDE.md` §5.1 states plainly: *"A user-selectable relay is a first-class requirement, not an
 add-on ... A networking design that makes this retrofit-only is not acceptable."* This is not a
-v0.2+ nice-to-have — the v0.1 "A to B" milestone already has three outbound flows that need it on
-day one (`docs/architecture/data-flow.md` §1.2 steps 1, 3b, 5: geocoding, traffic incidents, map
-tiles), and a fourth conditionally (routing, step 3, if the routing-engine ADR settles on a remote
-shape). `docs/specs/001-navigation-mvp.md` FR-8/FR-9 already assume this setting exists and applies
-uniformly; this document decides only **what the relay setting is built from**, not whether it
-exists.
+v0.2+ nice-to-have — the v0.1 "A to B" milestone already has four outbound flows that need it on
+day one (`docs/architecture/data-flow.md` §1.2 steps 1, 3, 3b, 5: geocoding, routing, traffic
+incidents, map tiles). Routing (step 3) is no longer conditional here: the routing-engine ADR is
+decided (Waze, decision D11, `docs/adr/003-routing-engine.md`) and it is a remote shape, so this
+flow needs the relay from day one exactly like the other three, not only if a future decision went
+a particular way. `docs/specs/001-navigation-mvp.md` FR-8/FR-9 already assume this setting exists
+and applies uniformly; this document decides only **what the relay setting is built from**, not
+whether it exists.
 
 This decision is scoped narrowly to **the transport mechanism(s) the networking chokepoint's relay
 setting supports** — the fail-closed default and the explicit-choice-before-first-request rule are

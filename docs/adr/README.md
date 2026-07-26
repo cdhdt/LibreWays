@@ -61,14 +61,14 @@ fixed regardless of the order decisions are actually made in.
 |---|---|---|---|
 | 001 | UI toolkit | [proposals/001-ui-toolkit.md](proposals/001-ui-toolkit.md) | `proposed` |
 | 002 | Map rendering and tile source | [proposals/002-map-rendering-and-tiles.md](proposals/002-map-rendering-and-tiles.md) | `proposed` |
-| 003 | Routing engine | [proposals/003-routing-engine.md](proposals/003-routing-engine.md) | `proposed` |
+| 003 | Routing engine | [proposals/003-routing-engine.md](proposals/003-routing-engine.md) | `accepted` — see [003-routing-engine.md](003-routing-engine.md) |
 | 004 | Geocoding provider | [proposals/004-geocoding-provider.md](proposals/004-geocoding-provider.md) | `proposed` |
-| 005 | Traffic source integration | [proposals/005-traffic-source-integration.md](proposals/005-traffic-source-integration.md) | `proposed` |
+| 005 | Traffic source integration | [proposals/005-traffic-source-integration.md](proposals/005-traffic-source-integration.md) | `accepted` — see [005-traffic-source-integration.md](005-traffic-source-integration.md) |
 | 006 | HTTP client and serialisation | [proposals/006-http-and-serialisation.md](proposals/006-http-and-serialisation.md) | `proposed` |
 | 007 | Relay and proxy implementation | [proposals/007-relay-and-proxy.md](proposals/007-relay-and-proxy.md) | `proposed` |
 | 008 | Local persistence | [proposals/008-local-persistence.md](proposals/008-local-persistence.md) | `proposed` |
 | 009 | Location and foreground service | [proposals/009-location-and-foreground-service.md](proposals/009-location-and-foreground-service.md) | `proposed` |
-| 010 | Module layout | [proposals/010-module-layout.md](proposals/010-module-layout.md) (superseded) — see [010-module-layout.md](010-module-layout.md) | `accepted` |
+| 010 | Module layout | [proposals/010-module-layout.md](proposals/010-module-layout.md) | `accepted` — see [010-module-layout.md](010-module-layout.md) |
 | 011 | CI, reproducible build, F-Droid pipeline | [proposals/011-ci-reproducible-build-fdroid.md](proposals/011-ci-reproducible-build-fdroid.md) | `proposed` |
 | 012 | Build and test tooling | none — decided directly, no proposal brief; see [012-build-and-test-tooling.md](012-build-and-test-tooling.md) | `accepted` |
 | 013 | Background scheduling strategy | not yet written | *(no brief exists yet — not a status-vocabulary value; see note below)* |
@@ -80,10 +80,17 @@ the decision before then must stop and ask, per CLAUDE.md §9. **012 and 014 are
 accepted ADRs with no proposal brief** — the maintainer explicitly delegated the 012 decision to
 the orchestrator (see `012-build-and-test-tooling.md`) and made the 014 decision directly (see
 `014-settings-persistence.md`); ADR numbering therefore has two accepted decisions with no
-corresponding `proposals/` entry (012, 014), while 010's proposal brief was superseded by its own
-accepted ADR (the ordinary lifecycle, not a delegation like 012/014) once the maintainer decided it
-directly rather than through recon. That gap is expected, not an error. **013 tracks a real gap, not
-a fourth status value**: CLAUDE.md §0.2 names
+corresponding `proposals/` entry (012, 014). **003, 005, and 010 follow the more typical path**:
+each has a `proposals/` brief recording the analysis, and each is now additionally recorded as an
+accepted ADR at the top level under the same number. The brief file itself is **not deleted** — it
+stays in the repo as the record of the analysis that led to the decision, per the lifecycle above —
+but its own `Status` header now reads `superseded by <NNN>-<title>.md`, pointing at the accepted
+ADR, precisely so nothing in the brief's own present-tense analysis (written before the decision
+existed) reads as an invitation to re-open a decision this index already lists as `accepted`. This
+index's own Status column for 003, 005, and 010 is unaffected by that brief-level relabelling: it
+reports the decision's status, which is `accepted`, not the brief's — 010's case differs only in
+who decided it (the maintainer directly, not through recon), not in how the lifecycle applies.
+**013 tracks a real gap, not a fourth status value**: CLAUDE.md §0.2 names
 "background scheduling strategy" as an open §0.2 decision, but no proposal brief covers
 deferrable/batched background work (proposal 009 covers only the foreground-service/location
 strategy). Its Status cell deliberately does not use any of the three status words above, since

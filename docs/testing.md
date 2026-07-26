@@ -119,11 +119,13 @@ A test that is rejected in review:
 
 ## 4. Fakeability: provider interfaces and the no-real-network rule
 
-Every external source the app touches — the third-party traffic endpoint, the OSM tile
-provider, geocoding/search, device GPS, and whatever routing integration is eventually chosen
-(see the open ADRs) — is reached exclusively through a `domain`-owned interface. `data` supplies
-the real implementation; tests supply a fake or a fixture-backed stub. This is what makes the
-rule enforceable rather than aspirational.
+Every external source the app touches — the Waze-backed traffic/congestion endpoint (decision D10),
+the OSM tile provider, geocoding/search, device GPS, and the Waze-backed routing engine (decision
+D11) — is reached exclusively through a `domain`-owned interface. `data` supplies the real
+implementation; tests supply a fake or a fixture-backed stub. This is what makes the rule
+enforceable rather than aspirational. Tile source and geocoding provider remain open ADRs; traffic
+and routing are decided and are named here rather than left as a placeholder for an eventual
+choice.
 
 **No test may perform a real network call.** Not to the traffic endpoint, not to the tile
 provider, not to a geocoding provider, not to any relay/proxy, not to a routing service, not to
@@ -136,8 +138,9 @@ checked into version control, built from synthetic input.
 
 These are not optional extras; they are the tests that make the privacy guarantees in
 `CLAUDE.md` §5 and §5.1 and in `docs/privacy.md` checkable rather than asserted in prose. Every
-feature that touches an outbound flow (traffic, tiles, geocoding, routing once decided) must have
-tests demonstrating:
+feature that touches an outbound flow (traffic, tiles, geocoding, routing — traffic and routing
+decided as Waze, decisions D10/D11; tiles and geocoding remain open ADRs) must have tests
+demonstrating:
 
 - **Every outbound request goes through the relay path.** A request built for one of these flows
   is routed through the user-selected relay/proxy abstraction — never a code path that can reach
@@ -156,9 +159,10 @@ tests demonstrating:
   outbound, verified by asserting the precision of what a fake transport actually receives, not by
   inspecting an intermediate value that is later discarded. **Geocoding and routing are explicitly
   exempt from this test**, mirroring `docs/specs/001-navigation-mvp.md` FR-26: a geocoding query
-  must be sent at full text precision to work at all, and a remote routing shape needs precise
-  origin/destination coordinates to route correctly. A test asserting coarsening on either of
-  those two flows would be asserting behaviour the product does not, and must not, have.
+  must be sent at full text precision to work at all, and routing (Waze-backed, decision D11) needs
+  precise origin/destination coordinates to route correctly, since it is a remote call by
+  construction, not a hypothetical one. A test asserting coarsening on either of those two flows
+  would be asserting behaviour the product does not, and must not, have.
 - **No identifier is attached** to an outbound request — no session token, no install UUID, no
   device fingerprint, no persistent correlation value across requests. Verified by asserting the
   fake transport receives no such field/header, across repeated calls.

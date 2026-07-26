@@ -2,7 +2,11 @@
 
 ## Status
 
-`proposed`
+`superseded by 005-traffic-source-integration.md` (accepted, decisions D10, D12–D15) — this brief's
+integration-architecture analysis led directly to that decision; it is kept here as the record of
+the analysis, per `docs/adr/README.md`'s lifecycle, and is no longer itself open. The source this
+brief deliberately left generic (see Context, below, written before the source was named) is now
+Waze, decided and not re-opened; do not treat anything below as inviting a re-open.
 
 ## Context
 

@@ -29,11 +29,14 @@ explicit open question in the spec, not a guess.
 | Risks | What could break around the change: callers, resources, manifest, build, existing tests |
 | Open questions | Marked **"Open question — human decision required"**; empty only if genuinely none |
 
-A spec that needs one of the open decisions in `CLAUDE.md` §0.2 (UI toolkit, map/tiles, routing
-engine, geocoding, HTTP stack, persistence, scheduling, CI) references the relevant
+A spec that needs one of the open decisions in `CLAUDE.md` §0.2 (UI toolkit, map/tiles, geocoding,
+HTTP stack, persistence, scheduling, CI) references the relevant
 [`../adr/proposals/`](../adr/proposals/) file by name instead of picking a library, and states
-plainly which parts of the work can start before that decision and which cannot. Module layout was
-on this list; it is decided — see [`../adr/010-module-layout.md`](../adr/010-module-layout.md).
+plainly which parts of the work can start before that decision and which cannot. Two items that
+used to belong on this list are decided and no longer among these open decisions: the routing
+engine and the traffic/incident source (both Waze, decisions D10/D11,
+`docs/adr/003-routing-engine.md` and `docs/adr/005-traffic-source-integration.md`), and module
+layout (see [`../adr/010-module-layout.md`](../adr/010-module-layout.md)).
 
 ## Naming convention
 

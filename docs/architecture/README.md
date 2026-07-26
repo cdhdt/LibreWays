@@ -6,12 +6,16 @@ justifications this architecture must satisfy, and [`../specs/001-navigation-mvp
 for the v0.1 requirements this structure is built to serve.
 
 This document describes **structure, responsibilities and boundaries** — not technology choices.
-Every UI toolkit, map library, routing engine, geocoder, HTTP client and persistence mechanism
-named anywhere below is a **candidate under evaluation**, never a decision. Per
-[`CLAUDE.md`](../../CLAUDE.md) §0.2, those choices are made once by the human developer and
+Every UI toolkit, map library, geocoder, HTTP client and persistence mechanism named anywhere below
+is a **candidate under evaluation**, never a decision — with one settled exception, stated here so
+it is not read as still open: the **routing engine and the traffic/incident source are decided**
+(both Waze, decisions D10/D11, recorded as `docs/adr/003-routing-engine.md` and
+`docs/adr/005-traffic-source-integration.md`), and this document names that decision explicitly
+wherever it comes up (§3, §4, §8, §9) rather than treating it as a candidate. Per
+[`CLAUDE.md`](../../CLAUDE.md) §0.2, the remaining choices are made once by the human developer and
 recorded as an ADR under [`../adr/proposals/`](../adr/proposals/); until an ADR exists, no code may
-depend on a specific one. Where this document must gesture at a shape to explain a boundary, it
-names the relevant ADR proposal instead of picking.
+depend on a specific one. Where this document must gesture at a shape to explain a boundary for one
+of those remaining open decisions, it names the relevant ADR proposal instead of picking.
 
 ## 1. Goals restated as constraints on the structure
 
@@ -43,31 +47,43 @@ Belongs here:
 - **Entities / value types**: `Coordinate` (a latitude/longitude pair at a given precision — the
   shared geographic value type used by every other entity below; a single place to express and
   enforce "coarsened vs. precise" rather than each entity inventing its own notion of a point),
-  `Route` (geometry + traffic-adjusted cost), `Place` (a geocoded result — label, `Coordinate`,
-  confidence, provenance), `Incident` (traffic event — kind, a position expressed relative to a
-  `Route` rather than a standalone `Coordinate`, severity, freshness — this is the definition
-  `docs/specs/001-navigation-mvp.md`'s Stage A test 6 exercises; stated once here and shared,
-  not redefined per document), `Position` (the user's own location, as a domain concept:
-  `Coordinate`, accuracy, timestamp — not a platform location object), `RelayConfiguration` (the
-  user's relay choice — see below; models "direct, no relay" as an explicit, distinct selectable
-  mode, never as the absence of a choice, per decision D1 — **and** models the not-yet-chosen state
-  (`NotChosen`) as a further, separate state that blocks all egress, distinct from every selectable
-  mode including "direct, no relay" itself; the two must never collapse into one another).
+  `Route` (geometry + `durationWithTraffic` + `durationWithoutTraffic`, with `trafficDelay` as a
+  computed property, decision D11), `Place` (a geocoded result — label, `Coordinate`, confidence,
+  provenance), `Incident` (traffic event — kind, subtype, an **absolute, coarsened `Coordinate`
+  position** — corrected from an earlier revision that expressed position only relative to a
+  `Route`, which could not place a reported alert on the map independent of an active route —
+  severity, and reliability signals (confirmation count, reporter-trust band, confidence, age),
+  decision D14 — this is the definition `docs/specs/001-navigation-mvp.md`'s Stage A test 6
+  exercises, corrected there in the same way; stated once here and shared, not redefined per
+  document), `CongestedSegment` (a sibling of `Incident`, not a variant of it, decision D13: a
+  non-empty polyline of `Coordinate`s, a bounded `congestionLevel` enum with an explicit `Unknown`
+  fallback, and a nullable `estimatedDelay`), `Position` (the user's own location, as a domain
+  concept: `Coordinate`, accuracy, timestamp — not a platform location object), `RelayConfiguration`
+  (the user's relay choice — see below; models "direct, no relay" as an explicit, distinct
+  selectable mode, never as the absence of a choice, per decision D1 — **and** models the
+  not-yet-chosen state (`NotChosen`) as a further, separate state that blocks all egress, distinct
+  from every selectable mode including "direct, no relay" itself; the two must never collapse into
+  one another).
 - **Use cases** (application services), named explicitly because callers and tests depend on these
   exact names: `ResolveDestination` (destination text → candidate `Place`s), `RequestRoute`
   (an origin `Position` and a destination `Place` → a `Route` or a domain error),
-  `LoadIncidentsForRoute` (a `Route`'s corridor → an `Incident` list or a domain error — **its own
-  use case**, not a step folded into
+  `LoadIncidentsForRoute` (a `Route`'s corridor → an `Incident` list, projected from the wider
+  `TrafficSnapshot` below — **its own use case**, not a step folded into
   `RequestRoute`: incidents can fail, retry, and refresh independently of the route itself, and
   `docs/architecture/data-flow.md` traces it as a distinct step for exactly this reason),
-  `TrackOwnPosition` (device position → `Position` projected onto the active route). Each use case
-  is a small, single-responsibility class taking its dependencies through the constructor (SOLID:
-  dependency inversion), returning domain types.
+  `LoadTrafficForArea` (a viewport → a `TrafficSnapshot` — incidents and congested segments
+  together — or a domain error; the viewport-scoped sibling of `LoadIncidentsForRoute`, decisions
+  D13/D15), `TrackOwnPosition` (device position → `Position` projected onto the active route). Each
+  use case is a small, single-responsibility class taking its dependencies through the constructor
+  (SOLID: dependency inversion), returning domain types.
 - **Provider interfaces** (ports), every one of them first-class and equally load-bearing —
   none is a lesser citizen of this list, and a decomposition that omits any of them is a defect
-  (see §9's tile-provider note): `PlaceSearchProvider`, `RouteProvider` (or an equivalent split
-  described in §3), `TrafficIncidentProvider`, **`TileProvider`** (an abstraction over *what area
-  is needed*, not over how a tile is fetched or rendered — it belongs to the same domain-port
+  (see §9's tile-provider note): `PlaceSearchProvider`, `RouteProvider` (unchanged signature under
+  decision D11 — only `Route`'s own shape gained a field), `TrafficIncidentProvider` (**widened**,
+  not renamed, by decisions D13/D15: takes a route corridor or a viewport, returns a
+  `TrafficSnapshot` carrying both incidents and congested segments from one call), **`TileProvider`**
+  (an abstraction over *what area is needed*, not over how a tile is fetched or rendered — it
+  belongs to the same domain-port
   standing as `RouteProvider` or `PlaceSearchProvider`; the map/tile flow needs it exercised and
   tested exactly like every other provider, see §7 and §9), `OwnPositionSource`, `RouteCache`/
   `PlaceCache` persistence ports, and **`RelaySettingsStore`** (the persistence port for the user's
@@ -96,13 +112,14 @@ wire formats and domain types, retry/backoff and caching policy per source.
 
 Concretely, `data` will hold (implementation, not interface, in each case):
 
-- Traffic incident source (talks to the third-party traffic endpoint — see
-  [`../privacy.md`](../privacy.md)).
+- Traffic and congestion source (talks to Waze, decision D10 — see
+  [`../privacy.md`](../privacy.md) and [`../adr/005-traffic-source-integration.md`](../adr/005-traffic-source-integration.md)).
 - Tile source (talks to the OSM tile provider or an alternative — see the tile-source ADR
   proposal).
 - Geocoding source (talks to the place-search provider — see the geocoder ADR proposal).
-- Routing source (on-device engine or remote routing service — see the routing ADR proposal;
-  this is the single highest-stakes swap point, discussed in §3).
+- Routing source (Waze, decision D11 — see [`../adr/003-routing-engine.md`](../adr/003-routing-engine.md);
+  this remains the single highest-stakes swap point, discussed in §3, since an on-device engine is
+  still addable later behind the unchanged `RouteProvider` port).
 - Location source (wraps the platform location API behind `OwnPositionSource`).
 - Persistence: `RouteCache`/`PlaceCache` (the `domain`-owned cache ports, §2.1), and any
   saved-place store from v0.4+, behind those ports. The bounded on-disk response caches introduced
@@ -150,20 +167,24 @@ Every external data source is reached exclusively through a `domain`-owned inter
 generic hexagonal-architecture boilerplate for its own sake — two concrete facts in this project
 make it load-bearing:
 
-1. **The routing decision is unresolved, and its candidate shapes have opposite privacy
-   profiles.** An on-device routing engine (candidate) never sends the user's origin or
-   destination anywhere. A remote routing API (candidate) necessarily sends origin and destination
-   *together* to a third party — the single most sensitive pair of coordinates the app handles,
-   because together they describe a specific trip, not just an area of interest. `domain` must be
-   written so that it cannot tell which of these it is talking to: a `RouteProvider` interface
-   returning a `Route` (or a domain error) given an origin `Position` and a destination `Place` —
-   matching FR-4, the `RouteProvider` port definition, and test 16 in
-   `docs/specs/001-navigation-mvp.md`, not two `Place`s. Whether the implementation behind
-   it does the computation on-device or ships the request off-device is a `data`-layer and
-   networking-chokepoint concern only. This lets the human evaluate and later change the routing
-   strategy — including switching from remote to on-device for privacy reasons, or the reverse for
-   a resource-cost reason — without touching `domain` or `presentation` at all, and without a
-   review needing to re-audit those layers for a routing change.
+1. **The routing decision is now resolved for v0.1 (decision D11, `docs/adr/003-routing-engine.md`,
+   accepted), but its candidate shapes still have opposite privacy profiles, which is exactly why
+   the abstraction remains load-bearing rather than becoming decorative.** v0.1's `RouteProvider` is
+   backed by a remote engine (Waze's own routing endpoint, the same operator decision D10 already
+   named for the traffic flow) — origin and destination leave the device together, at full
+   precision, in one request: the single most sensitive pair of coordinates the app handles, because
+   together they describe a specific trip, not just an area of interest. An on-device routing engine
+   remains a real, addable-later alternative that would send nothing; `domain` is written so that it
+   cannot tell which of these it is talking to: a `RouteProvider` interface returning a `Route` (or
+   a domain error) given an origin `Position` and a destination `Place` — matching FR-4, the
+   `RouteProvider` port definition, and test 16 in `docs/specs/001-navigation-mvp.md`, not two
+   `Place`s. Whether the implementation behind it does the computation on-device or ships the
+   request off-device is a `data`-layer and networking-chokepoint concern only. This lets the human
+   change the routing strategy later — including switching from remote to on-device for privacy
+   reasons, or the reverse for a resource-cost reason — without touching `domain` or `presentation`
+   at all, and without a review needing to re-audit those layers for a routing change. This is the
+   concrete reason `docs/adr/003-routing-engine.md` requires `RouteProvider`'s signature to stay
+   unchanged: the decision picked an implementation, not a different port shape.
 2. **Every other source (traffic, tiles, geocoding) is a distinct third party with its own
    endpoint, rate limits and data sensitivity** (see [`../privacy.md`](../privacy.md)). Isolating
    each behind its own interface means a provider swap (e.g. changing tile source, or adding a
@@ -179,8 +200,8 @@ implementation is a `data`-layer plug-in behind it.
 
 **Every outbound network request the app makes passes through exactly one path.** Concretely:
 there is a single component in `data` responsible for issuing HTTP(S) requests; every provider
-implementation (traffic, tiles, geocoding, and routing if the chosen shape is remote) calls into
-it rather than opening its own connection.
+implementation (traffic, tiles, geocoding, and routing — Waze/Google, decision D11, remote and
+certain from v0.1) calls into it rather than opening its own connection.
 
 This exists because `CLAUDE.md` §5.1 requires the user-selectable relay, coordinate coarsening,
 rate limiting and response caching to be applied **in exactly one place** — a policy scattered
@@ -299,19 +320,23 @@ illustrative — those packages are not yet separate Gradle modules, and nothing
 ```
 domain/                               Gradle module :domain — pure Kotlin/JVM, no Android Gradle
                                        Plugin, no Android dependency (docs/adr/010-module-layout.md)
-  model/          Coordinate, Route, Place, Incident, Position, RelayConfiguration, domain errors
-  usecase/        ResolveDestination, RequestRoute, LoadIncidentsForRoute, TrackOwnPosition, ...
-  provider/       PlaceSearchProvider, RouteProvider, TrafficIncidentProvider,
+  model/          Coordinate, Route, Place, Incident, CongestedSegment, Position,
+                  RelayConfiguration, domain errors
+  usecase/        ResolveDestination, RequestRoute, LoadIncidentsForRoute, LoadTrafficForArea,
+                  TrackOwnPosition, ...
+  provider/       PlaceSearchProvider, RouteProvider, TrafficIncidentProvider (widened: route
+                  corridor or viewport -> TrafficSnapshot, decisions D13/D15),
                   TileProvider, OwnPositionSource, RouteCache, PlaceCache, RelaySettingsStore
 
 app/                                   Gradle module :app — the Android application module,
                                         depending on :domain. Package split below is illustrative,
                                         not yet separate Gradle modules.
   data/
-    traffic/        implements TrafficIncidentProvider; also owns its bounded on-disk response
-                    cache (decision D9, file-based, size/TTL-bounded LRU — see
+    traffic/        implements the widened TrafficIncidentProvider against Waze (decision D10,
+                    docs/adr/005-traffic-source-integration.md); also owns its bounded on-disk
+                    response cache (decision D9, file-based, size/TTL-bounded LRU — see
                     docs/specs/001-navigation-mvp.md FR-27–FR-31), consulted before any network
-                    fetch
+                    fetch, and the five-minute minimum-interval/coalescing policy of decision D12
     tiles/          implements TileProvider; also owns the bounded on-disk tile cache (decision
                     D7, file-based, size/TTL-bounded LRU — see docs/specs/001-navigation-mvp.md
                     FR-27–FR-31), consulted before any network fetch
@@ -319,7 +344,9 @@ app/                                   Gradle module :app — the Android applic
                     (decision D9, same file-based/size/TTL/LRU standard as the tile cache — this is
                     the most sensitive of the three caches, not a looser one), consulted before any
                     network fetch
-    routing/        implements RouteProvider (on-device or remote — undecided)
+    routing/        implements RouteProvider against Waze's routing endpoint (decision D11,
+                    docs/adr/003-routing-engine.md) — the same operator as traffic/; an on-device
+                    engine remains addable later behind the same unchanged port
     location/       implements OwnPositionSource
     persistence/    implements RouteCache / PlaceCache
     settings/       implements RelaySettingsStore via Jetpack DataStore Preferences (decision D2,
@@ -333,13 +360,23 @@ app/                                   Gradle module :app — the Android applic
 
 ## 9. Undecided, and where the decision lands
 
+**Two rows that used to live in this table are now decided, not undecided**, and are recorded here
+instead of in the table below so the table's own title stays accurate: **routing engine and data
+shape** is settled as Waze's own routing endpoint (decision D11, `docs/adr/003-routing-engine.md`,
+accepted) — affecting `data` (routing source) and the networking chokepoint, with `domain`'s
+`RouteProvider` interface and every use case that calls it, plus `presentation` (which renders
+whatever `Route` it receives regardless of how it was computed, see §3), unaffected by the choice.
+**Traffic source integration and rate limiting** is settled as Waze (decision D10,
+`docs/adr/005-traffic-source-integration.md`, accepted), with the five-minute politeness floor fixed
+by decision D12 — affecting `data` (traffic source) and the networking chokepoint, with `domain`'s
+widened `TrafficIncidentProvider` interface unaffected; the rate-limit policy itself lives in the
+chokepoint (§4), not duplicated in the provider.
+
 | Open decision | Layer(s) affected | What must NOT depend on the choice |
 |---|---|---|
 | UI toolkit (Compose vs Views) | `presentation` only | `domain` and `data` reference nothing UI-toolkit-specific; use cases return plain domain/data types, not toolkit state holders. |
 | Map rendering and tile source | `data` (tile source implementation) + `presentation` (rendering) | `domain`'s `TileProvider` interface and `Route`/`Incident`/`Position` types are toolkit-agnostic; a map library swap is confined to its `data` implementation plus the `presentation` rendering code. |
-| Routing engine and data shape (on-device vs remote) | `data` (routing source) + networking chokepoint (only if remote) | `domain`'s `RouteProvider` interface and every use case that calls it; `presentation` renders whatever `Route` it receives regardless of how it was computed. See §3. |
 | Geocoding/place-search provider | `data` (geocoding source) | `domain`'s `PlaceSearchProvider` interface and `Place` type. |
-| Traffic source integration and rate limiting | `data` (traffic source) + networking chokepoint | `domain`'s `TrafficIncidentProvider` interface; the rate-limit policy itself lives in the chokepoint (§4), not duplicated in the provider. |
 | HTTP and serialization stack | networking chokepoint + every `data` provider that is network-backed | `domain` (no provider interface mentions HTTP or a serialization format); `presentation`. |
 | Relay/proxy implementation (Tor, HTTP/SOCKS proxy, self-hosted instance) | networking chokepoint exclusively | Every provider implementation and all of `domain`/`presentation` — a provider never knows or cares whether a relay is active. |
 | Local persistence for `RouteCache`/`PlaceCache` (Room vs SQLDelight vs plain SQLite — ADR 008) | `data` (persistence implementations of these cache ports) | `domain`'s cache port interfaces; nothing above `data` reads a database row type. **Decided separately**: `RelaySettingsStore` is not part of this open decision — it is settled as Jetpack DataStore Preferences from v0.1 (decision D2, recorded as `docs/adr/014-settings-persistence.md`) precisely so it does not wait on ADR 008, which keeps ownership of the `RouteCache`/`PlaceCache` question only. The v0.1 on-disk tile cache (decision D7) is likewise not part of this open decision: it is a file-based store (see `docs/specs/001-navigation-mvp.md` FR-27–FR-31), not a structured-database question. |

@@ -9,19 +9,24 @@ devices (GrapheneOS, no Play Services) and F-Droid distribution.
 
 **LibreWays is an independent, unaffiliated third-party client.** It is not affiliated with,
 endorsed by, sponsored by, or connected in any way to any existing navigation service, map
-provider, or traffic data provider. Any third-party service LibreWays reads data from is
-described only in neutral, descriptive prose (e.g. "the traffic data source") — never by name,
-logo, or any element implying partnership. LibreWays has its own visual identity; it borrows no
-branding from anyone.
+provider, or traffic data provider. LibreWays reads its live traffic, incident, and route data
+from **Waze** — named here in plain, descriptive prose, not as branding: an audit of this app's
+network traffic should find the same name this document states, not a euphemism for it. Naming
+the source is what an honest privacy account and the app's own attribution
+(`docs/specs/001-navigation-mvp.md` FR-38) both require — withholding it would be less honest,
+not more neutral. No logo, mascot, icon, or other element implying partnership is used anywhere
+in the app or its materials; LibreWays has its own visual identity and borrows no branding from
+anyone.
 
 ## Privacy, in plain language
 
 LibreWays cannot compute a route, resolve a typed destination, show traffic, or draw a map
 without sending some requests to third parties it does not control. Concretely, using the app
-is expected to send: your route's origin and destination, to a routing service; the area you're
-looking at, to a traffic-incident source; and the map area you're viewing, to a map-tile
-provider — each of these fires once per corresponding action. **Destination search is different
-and more exposed, and this must be stated plainly, not softened**: because the app searches as
+is expected to send: your route's origin and destination, to Waze, for route computation; the
+area you're looking at, to Waze, for traffic and incident data; and the map area you're viewing,
+to a map-tile provider (not yet chosen) — each of these fires once per corresponding action.
+**Destination search is different and more exposed, and this must be stated plainly, not
+softened**: because the app searches as
 you type, it sends a query to a place-search provider every few keystrokes — concretely, every
 time you pause for about 600 ms after typing at least 3 characters — not once when you finish
 typing. This includes partial text you typed and then deleted: if a partial string sat for 600 ms
