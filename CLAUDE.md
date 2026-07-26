@@ -50,7 +50,11 @@ non-negotiables, recommendation) and the **human decides**; the decision is then
 
 UI toolkit (Compose vs Views) · map rendering and tile source · local persistence (Room vs
 SQLDelight vs plain SQLite) · HTTP and serialisation stack · background scheduling strategy ·
-module layout · CI setup and reproducible-build pipeline.
+CI setup and reproducible-build pipeline.
+
+Module layout was on this list and is now decided — see `docs/adr/010-module-layout.md`
+(`:domain`/`:app`, two Gradle modules) — and is removed from here accordingly; this is a factual
+correction to keep this list matching `docs/adr/README.md`'s index, not a reopening of anything.
 
 An agent that needs one of these before an ADR exists **stops and asks** — it does not pick
 silently, and it does not treat a brainstorming transcript as a decision.

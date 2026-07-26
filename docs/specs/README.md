@@ -30,9 +30,10 @@ explicit open question in the spec, not a guess.
 | Open questions | Marked **"Open question — human decision required"**; empty only if genuinely none |
 
 A spec that needs one of the open decisions in `CLAUDE.md` §0.2 (UI toolkit, map/tiles, routing
-engine, geocoding, HTTP stack, persistence, scheduling, module layout, CI) references the
-relevant [`../adr/proposals/`](../adr/proposals/) file by name instead of picking a library, and
-states plainly which parts of the work can start before that decision and which cannot.
+engine, geocoding, HTTP stack, persistence, scheduling, CI) references the relevant
+[`../adr/proposals/`](../adr/proposals/) file by name instead of picking a library, and states
+plainly which parts of the work can start before that decision and which cannot. Module layout was
+on this list; it is decided — see [`../adr/010-module-layout.md`](../adr/010-module-layout.md).
 
 ## Naming convention
 
