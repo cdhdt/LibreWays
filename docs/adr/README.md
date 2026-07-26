@@ -80,7 +80,8 @@ the decision before then must stop and ask, per CLAUDE.md §9. **012 and 014 are
 accepted ADRs with no proposal brief** — the maintainer explicitly delegated the 012 decision to
 the orchestrator (see `012-build-and-test-tooling.md`) and made the 014 decision directly (see
 `014-settings-persistence.md`); ADR numbering therefore has two accepted decisions with no
-corresponding `proposals/` entry (012, 014) while 001–011 remain proposals, and that gap is
+corresponding `proposals/` entry (012, 014), distinct from the numbers within the 001–011 range that
+do have one — some of those (001, 002, 004, 008, 009, 010, 011) remain `proposed`, and that gap is
 expected, not an error. **003, 005, 006, and 007 follow the more typical path**: each has a
 `proposals/` brief recording the analysis, and each is now additionally recorded as an accepted ADR
 at the top level under the same number — 006 and 007 by the maintainer's explicit delegation to the
