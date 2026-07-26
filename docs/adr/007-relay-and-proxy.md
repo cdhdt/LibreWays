@@ -88,6 +88,23 @@ version to be pinned — a pre-adoption task for whoever picks this up, not sett
   egress. No outbound request is made before the user has made an explicit choice (FR-8, decision
   D1).
 
+**Proxy authentication — out of scope for v0.1 (decision D19).** The proposal brief's leak-risk
+item 4 named a real, unresolved question this ADR does not silently drop: Option A's own
+description allows an optional username/password on a generic proxy, and if a credential field were
+added without a decision, it would land in the already-decided, **unencrypted** DataStore
+Preferences store (`docs/adr/014-settings-persistence.md`) with no storage-at-rest analysis and no
+test covering it — exactly the kind of gap the brief flagged as a dependency on
+`docs/adr/proposals/008-local-persistence.md`, never resolved there either. **The maintainer decided:
+v0.1 does not support authenticated proxies.** `RelayConfiguration`'s proxy and self-hosted modes
+carry host and port only, no credential field, for this milestone. Reasoning: a proxy credential
+would need its own storage-at-rest decision (ADR 014's unencrypted store is not an authorisation to
+persist one) and adds a leak surface — never logged, storage posture unresolved — for marginal
+benefit, since a user who needs an authenticated upstream proxy can run a local, unauthenticated
+listener in front of it and point this setting at that instead. This closes the brief's leak-risk
+item 4 as **moot for v0.1**, not dropped: there is no credential field to leak or store until this
+decision is revisited, which — like any accepted decision — the maintainer may do at any time, at
+which point the storage-at-rest question becomes live again and needs its own ADR-008-scoped answer.
+
 ### The blocking verification this decision carries
 
 **DNS resolution must not happen outside the configured proxy.** With SOCKS proxying, Java/Android
@@ -117,6 +134,15 @@ implementation that follows it:**
   (OkHttp on Android), that is an escalation to the maintainer, not something to route around — and
   it reopens this decision.** A relay transport that cannot be made to avoid a DNS leak is not the
   mechanism this ADR describes.
+
+**Confidence: medium-high on Option A as the v0.1 baseline** (a well-understood platform mechanism,
+low implementation risk), **medium on deferring Option B** (depends on the NetCipher-or-equivalent
+maintenance check this ADR does not resolve), **high on excluding Option C** (the blocking facts —
+no stable Arti bindings, no official Kotlin support — are directly verified, not inferred) —
+matching the brief's own stated confidence levels for each. **Not yet confident, and explicitly not
+claimed above**: whether the DNS-leak risk can actually be prevented with this stack: that is
+exactly what the blocking verification exists to establish, not something this ADR's confidence
+level covers.
 
 ## Consequences
 

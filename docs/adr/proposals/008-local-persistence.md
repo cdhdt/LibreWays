@@ -54,10 +54,14 @@ open questions for the v0.4 recon spec when it is written — and not the settin
 mechanism (decision D2/ADR 014) or the file-based tile cache (decision D7), both already decided
 outside this document's scope, as above.
 
-**Relationship to `docs/adr/proposals/007-relay-and-proxy.md`**: that document flags proxy
-credentials (if an authenticated proxy is configured) as a value needing a storage answer from
-this ADR — noted here as a concrete, cross-referenced consumer of whatever encryption-at-rest
-mechanism this document recommends.
+**Relationship to `docs/adr/007-relay-and-proxy.md` — now moot for v0.1, not resolved by this
+document.** That brief flagged proxy credentials (if an authenticated proxy is configured) as a
+value needing a storage answer from this ADR. The accepted `007-relay-and-proxy.md` (decision D19)
+has since scoped authenticated-proxy support out of v0.1 entirely: `RelayConfiguration`'s proxy and
+self-hosted modes carry host and port only, no credential field, so there is no such value to store
+in v0.1. This dependency is therefore dormant, not answered — if D19 is ever revisited, the
+storage-at-rest question below becomes live again and still needs this document's (or its
+successor's) decision.
 
 ## Decision drivers
 
@@ -195,9 +199,10 @@ z/x/y tile) rather than relational rows.
   need more manual wiring of its `SqlDriver` around a SQLCipher-backed connection). Do **not** adopt
   `androidx.security-crypto` for new code — it is deprecated by its own maintainers as of April
   2025 for the reasons stated above. For the narrower case of a single secret value (e.g. a proxy
-  credential from `docs/adr/proposals/007-relay-and-proxy.md`), a DataStore + Tink + Android
-  Keystore assembly is lighter-weight than encrypting an entire database for one field, and is the
-  currently-recommended replacement pattern per the same research.
+  credential — hypothetical for now, since `docs/adr/007-relay-and-proxy.md` decision D19 scopes
+  authenticated proxies out of v0.1 entirely, so no such value exists to store today), a
+  DataStore + Tink + Android Keystore assembly is lighter-weight than encrypting an entire database
+  for one field, and is the currently-recommended replacement pattern per the same research.
 - **Retention limits**: the on-disk tile cache (decision D7, size/TTL-bounded LRU, out of this
   document's own scope — see Context) is already named in `docs/privacy.md` and
   `docs/specs/001-navigation-mvp.md` FR-27; its exact size cap and TTL remain an
