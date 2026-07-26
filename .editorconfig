@@ -12,7 +12,6 @@ indent_size = 4
 indent_size = 4
 max_line_length = 120
 ktlint_standard_filename = enabled
-ktlint_function_naming_ignore_when_annotated_with = Test
 
 [*.md]
 trim_trailing_whitespace = false

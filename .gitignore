@@ -34,5 +34,8 @@ local.properties
 # Deliberate, flagged exception to the blanket *.jar rule above and to CLAUDE.md §10.10
 # (no committed binaries): the Gradle wrapper jar is standard practice and is required for a
 # reproducible build without relying on a pre-installed Gradle on the machine that checks it out.
+# It is verifiable, not merely trusted: its sha256 is
+# 497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7, matching Gradle's own published
+# wrapper checksum for 9.6.1 (https://services.gradle.org/distributions/gradle-9.6.1-wrapper.jar.sha256).
 # See docs/adr/012-build-and-test-tooling.md and this project's build-skeleton PR body.
 !gradle/wrapper/gradle-wrapper.jar
