@@ -252,18 +252,31 @@ CI's own execution of "all tests" is pending `adr/proposals/011-ci-reproducible-
 the commands above are what a human or an agent runs locally today; nothing yet runs them
 automatically on every push.
 
-**JDK requirement.** Building requires a **JDK 21 installation already present on the machine**
-(both `:domain` and `:app` declare `21` as their required JVM target). Gradle's toolchain
-auto-download is deliberately disabled (`org.gradle.java.installations.auto-download=false` in
-`gradle.properties`) — this project does not silently fetch and execute a JDK from a third-party
-toolchain resolver, only ever detects one already installed locally. If Gradle cannot find a JDK 21
-among its known installation locations, either install one (e.g. Temurin 21) or point
-`org.gradle.java.installations.paths` at it, and the build will pick it up without a download. This
-requirement exists independently of whatever JDK happens to be the machine's default `java`: detekt
-1.23.8's bundled compiler frontend does not parse very new JDK version strings (verified against
-JDK 25 while building this project), so a default `java` newer than JDK 21 will make `detekt` fail
-outright even though `:domain:test` and `:domain:build` otherwise succeed — see the build-skeleton
-PR body for the exact error and the verification that was actually run.
+**JDK requirement — read this before running anything.** `detekt` fails on whatever JVM **Gradle
+itself runs on** — the daemon's own JVM, not a compile/test toolchain — if that JVM is newer than
+detekt 1.23.8's bundled compiler frontend can parse (verified: it fails on JDK 25 with `Invalid
+value (25) passed to --jvm-target`, and separately with an unparseable-version-string error deeper
+in its embedded compiler). **This is not something `org.gradle.java.installations.paths` or any
+other toolchain property can fix**: toolchain properties tell Gradle which JDK to use for a
+*compile or test task's* toolchain; they say nothing about which JDK launches the Gradle daemon
+process that runs `detekt`'s analysis in-process. If your machine's default `java` resolves to
+something newer than JDK 21, `detekt` — and therefore `./gradlew build`, `check`, and any command
+that includes it — **will fail even with a JDK 21 also installed**, unless you point the Gradle
+launcher itself at that JDK 21.
+
+**The actual remedy**: set `JAVA_HOME` to a JDK 21 installation before invoking `./gradlew`, e.g.:
+
+```
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew :domain:build ktlintCheck detekt
+```
+
+(adjust the path to wherever a JDK 21 is installed on your machine — `update-java-alternatives -l`
+or your OS's JDK manager will show it). `org.gradle.java.installations.auto-download=false` in
+`gradle.properties` means Gradle never silently fetches a JDK to work around this on your behalf —
+it detects a locally installed one for toolchain resolution (`:domain` and `:app` both declare `21`
+as their required JVM target for that purpose) but will not launch its own daemon on a different
+JDK than whatever `JAVA_HOME`/`PATH` resolves to. Every verified command in the build-skeleton PR
+body sets `JAVA_HOME` explicitly for exactly this reason — do the same locally.
 
 ---
 
