@@ -121,15 +121,23 @@ implementation that follows it:**
   the app's UI — until an instrumented test demonstrates that no DNS query for a request's host
   leaves the device outside the configured proxy.** Until that test exists and passes, any claim
   that the relay hides the user's destination from their local network is unverified, not delivered.
-- **That test is a prerequisite of the relay implementation, not a follow-up task** — it must exist
-  and pass before the relay transport is considered done, tracked as
-  `docs/specs/001-navigation-mvp.md` test 125.
+- **This property does not reduce to one in-process test.** OkHttp's own client-level behaviour
+  (does its own `Dns` seam ever get asked for the destination host; is the SOCKS route's socket
+  address left unresolved) is real and testable in-process — tracked as
+  `docs/specs/001-navigation-mvp.md` test 125 — but it is **necessary, not sufficient**: the actual
+  name-resolution risk lives in the platform's own socket/SOCKS implementation, below any seam
+  OkHttp exposes, which no in-process fake can observe or substitute. **The instrumented test that
+  is the prerequisite of the relay implementation, not a follow-up task**, is
+  `docs/specs/001-navigation-mvp.md` test 127 — it must exist and pass, on a real or emulated
+  device, before the relay transport is considered done. Test 125 passing must never be read as
+  satisfying this requirement on its own.
 - **Also required, with the same standing**: a test that no pooled/keep-alive connection established
   under a prior relay setting is reused after the setting changes (test 126, since OkHttp's
   connection pool is keyed by address including the proxy, but this must be verified for the actual
-  client, not assumed from general knowledge of the library). The fail-closed and
-  unset-blocks-egress behaviours restated above already have tests (57, 58) and are not reopened by
-  this caveat.
+  client, not assumed from general knowledge of the library — via an app-owned collaborator the
+  chokepoint injects, since OkHttp's own `ConnectionPool` is a `final` type this project's
+  no-mocking-library policy cannot substitute). The fail-closed and unset-blocks-egress behaviours
+  restated above already have tests (57, 58) and are not reopened by this caveat.
 - **If verification shows local DNS resolution cannot be prevented with this app's chosen stack
   (OkHttp on Android), that is an escalation to the maintainer, not something to route around — and
   it reopens this decision.** A relay transport that cannot be made to avoid a DNS leak is not the
