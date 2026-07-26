@@ -50,13 +50,15 @@ The authoritative, exhaustive account of every outbound request and every local 
 what is sent or stored, to whom, how often, and what you can do about it — lives in
 [`docs/privacy.md`](docs/privacy.md) and will be kept honest as the app is built.
 
-## Status: pre-alpha — nothing is implemented yet
+## Status: pre-alpha — no working app yet
 
-There is no working app. There is no build, no APK, no released code, and no screenshot to
-show, because none of it exists yet. This repository currently contains planning documents
-only: a roadmap, developer specs, and architecture-decision material. Nothing described in
-these documents should be read as a feature that exists today — treat every capability
-mentioned anywhere in this repo as *planned*, not *available*, until a release says otherwise.
+There is no working app, no APK, no released code, and no screenshot to show. What exists so
+far is a Gradle build skeleton (`:domain`, a pure Kotlin/JVM module with no Android dependency at
+all, and `:app`, the bare Android application module — see `docs/adr/010-module-layout.md`) and a
+handful of domain value-object unit tests. Nothing described anywhere in this repo — including the
+roadmap, developer specs, and architecture-decision material — should be read as a feature that
+exists today; treat every capability mentioned as *planned*, not *available*, until a release says
+otherwise.
 
 ## Planned platform requirements
 
@@ -66,8 +68,12 @@ mentioned anywhere in this repo as *planned*, not *available*, until a release s
 - Distribution target: F-Droid-compatible (reproducible build, no proprietary blob, no
   account-gated SDK).
 
-There is no build to run yet, so no build instructions are given here. This section will be
-replaced with real setup steps once code exists.
+A Gradle build skeleton exists (`:domain` builds and tests with no Android SDK needed at all;
+`:app` additionally needs an Android SDK). Building requires a **locally installed JDK 21** —
+see [`docs/testing.md`](docs/testing.md) for why and the exact commands, including the
+`JAVA_HOME` you need to set if your machine's default JDK is newer. There is still no user-facing
+app, no APK, and no release; this section will be replaced with real end-user setup steps once
+one exists.
 
 ## License
 
