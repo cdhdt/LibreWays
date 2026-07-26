@@ -58,21 +58,22 @@ Using its core features necessarily sends network requests to those services. Co
    the geocoding provider, or Waze (traffic, congestion, and routing), we have no visibility into
    what that operator logs, retains, correlates, or shares. We can only control what we send, not
    what happens to it afterwards.
-3. **A relay hides the requester's IP, not the request content — and that claim is not yet verified
-   for this app's stack.** Routing traffic through Tor, a proxy, or a self-hosted instance (decision
-   D18, a single user-configured HTTP or SOCKS5 proxy, `docs/adr/007-relay-and-proxy.md`) is
-   *designed* to stop the destination provider from learning the user's network origin. It is not
-   designed to stop the provider from seeing the query itself (a search string, a viewport, or —
-   worst case — a routing origin/destination pair), and it does not defeat a sufficiently resourced
-   adversary doing traffic-timing correlation against the relay network itself; see
-   `docs/threat-model.md`. **Stated as plainly as the rest of this section**: whether the relay even
-   hides the requester's IP is itself unverified for this app's HTTP client as of this writing —
-   Java/Android SOCKS proxying can resolve the destination hostname locally by default, leaking it to
-   the user's network outside the proxy hop even while the connection itself is relayed. This app
-   does not claim the relay works until an instrumented test proves no such DNS query leaves the
-   device outside the configured proxy; that test is a blocking prerequisite of the relay
-   implementation, not a caveat to be read past (`docs/specs/001-navigation-mvp.md` test 125,
-   `docs/adr/007-relay-and-proxy.md`).
+3. **A relay hides the requester's IP from the destination, not the request content.** Routing
+   traffic through Tor, a proxy, or a self-hosted instance (decision D18, a single user-configured
+   HTTP or SOCKS5 proxy, `docs/adr/007-relay-and-proxy.md`) is *designed* to stop the destination
+   provider from learning the user's network origin. It is not designed to stop the provider from
+   seeing the query itself (a search string, a viewport, or — worst case — a routing
+   origin/destination pair), and it does not defeat a sufficiently resourced adversary doing
+   traffic-timing correlation against the relay network itself; see `docs/threat-model.md`.
+   **A separate, distinct property is not yet verified for this app's stack**: whether the relay
+   hides *which host the app is contacting* from the user's own local network and ISP — not the
+   requester's-IP-from-the-destination property above, a different guarantee. Java/Android SOCKS
+   proxying can resolve the destination hostname locally by default, leaking *that hostname* to the
+   local network outside the proxy hop even while the connection itself is otherwise relayed
+   correctly. This app does not claim that local-destination-confidentiality property until an
+   instrumented test proves no such DNS query leaves the device outside the configured proxy; that
+   test is a blocking prerequisite of the relay implementation, not a caveat to be read past
+   (`docs/specs/001-navigation-mvp.md` test 125, `docs/adr/007-relay-and-proxy.md`).
 4. **Some data cannot be coarsened without breaking the feature.** A destination search string must
    be sent as typed for geocoding to work. The routing origin and destination coordinates must be
    precise enough to route correctly — this is now certain, not conditional (decision D11): every
@@ -429,7 +430,18 @@ of these without a corresponding update here is incomplete, not merely undocumen
   anywhere else, until an instrumented test proves no DNS query for a request's host leaves the
   device outside the configured proxy (`docs/specs/001-navigation-mvp.md` test 125); if that test
   cannot be made to pass with this app's stack, that reopens decision D18 as an escalation to the
-  maintainer, not a workaround.
+  maintainer, not a workaround. **Still genuinely open, and distinct from the transport decision
+  above**: whether the settings UI presents the mode set (direct/no relay, Tor, proxy, self-hosted)
+  as equally weighted choices, or suggests one (e.g. Tor) as a default with the others reachable as
+  secondary options — tracked as `docs/specs/001-navigation-mvp.md` OQ5, not settled by D18 or by
+  this entry.
+- **Settled (decision D19) — no authenticated-proxy support in v0.1.** A relay/proxy credential
+  (username/password) is out of scope for this milestone: it would need its own storage-at-rest
+  decision (ADR 014's unencrypted DataStore Preferences is not an authorisation to persist a
+  credential there) and adds a leak surface for marginal benefit, since a user who needs
+  authentication can run a local unauthenticated listener in front of their proxy instead. Recorded
+  as an explicit non-goal, revisable like any accepted decision — see
+  `docs/adr/007-relay-and-proxy.md`.
 - **Settled (decision D1) — first-run and fail-closed behaviour.** First run performs **zero**
   network requests before the user has made an explicit relay choice; "direct, no relay" is itself
   that choice, never the silent result of leaving the setting untouched. A configured relay that
