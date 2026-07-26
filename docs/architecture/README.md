@@ -6,16 +6,20 @@ justifications this architecture must satisfy, and [`../specs/001-navigation-mvp
 for the v0.1 requirements this structure is built to serve.
 
 This document describes **structure, responsibilities and boundaries** — not technology choices.
-Every UI toolkit, map library, geocoder, HTTP client and persistence mechanism named anywhere below
-is a **candidate under evaluation**, never a decision — with one settled exception, stated here so
-it is not read as still open: the **routing engine and the traffic/incident source are decided**
-(both Waze, decisions D10/D11, recorded as `docs/adr/003-routing-engine.md` and
-`docs/adr/005-traffic-source-integration.md`), and this document names that decision explicitly
-wherever it comes up (§3, §4, §8, §9) rather than treating it as a candidate. Per
-[`CLAUDE.md`](../../CLAUDE.md) §0.2, the remaining choices are made once by the human developer and
-recorded as an ADR under [`../adr/proposals/`](../adr/proposals/); until an ADR exists, no code may
-depend on a specific one. Where this document must gesture at a shape to explain a boundary for one
-of those remaining open decisions, it names the relevant ADR proposal instead of picking.
+Every UI toolkit, map library, and geocoder named anywhere below is a **candidate under
+evaluation**, never a decision — with four settled exceptions, stated here so they are not read as
+still open: the **routing engine and the traffic/incident source are decided** (both Waze,
+decisions D10/D11, recorded as `docs/adr/003-routing-engine.md` and
+`docs/adr/005-traffic-source-integration.md`), and the **networking chokepoint's own HTTP client,
+serialisation stack, and relay transport are decided** (OkHttp plus kotlinx.serialization,
+decision D17, recorded as `docs/adr/006-http-and-serialisation.md`; a single user-configured HTTP or
+SOCKS5 proxy, decision D18, recorded as `docs/adr/007-relay-and-proxy.md`) — this document names
+each decision explicitly wherever it comes up (§3, §4, §8, §9) rather than treating it as a
+candidate. Per [`CLAUDE.md`](../../CLAUDE.md) §0.2, the remaining choices are made once by the human
+developer and recorded as an ADR under [`../adr/proposals/`](../adr/proposals/); until an ADR
+exists, no code may depend on a specific one. Where this document must gesture at a shape to explain
+a boundary for one of those remaining open decisions, it names the relevant ADR proposal instead of
+picking.
 
 ## 1. Goals restated as constraints on the structure
 
@@ -234,9 +238,20 @@ has to be re-verified every time a provider is added or changed.
   [`../adr/proposals/002-map-rendering-and-tiles.md`](../adr/proposals/002-map-rendering-and-tiles.md)
   — the point where a reader (and the human deciding the ADR) must actually resolve it, not
   something this document settles.
-- The chokepoint's own implementation (which HTTP client, which relay mechanism) is itself an open
-  decision — see the HTTP-stack and relay ADR proposals. What is fixed here is only that it is
-  singular and mandatory, not what it is built from.
+- **The chokepoint's own implementation is decided, not open.** A single, constructor-injected
+  `OkHttpClient` instance (decision D17, `docs/adr/006-http-and-serialisation.md`), configured with
+  a single user-configured HTTP or SOCKS5 proxy as its relay mechanism (decision D18,
+  `docs/adr/007-relay-and-proxy.md`) — Tor via Orbot, a generic proxy, and a self-hosted instance all
+  reduce to this one transport, given their own label in the settings UI for the trust distinction
+  between them. **This does not yet mean the relay is verified to protect what it is meant to
+  protect.** With SOCKS proxying, DNS resolution for the destination host can happen locally by
+  default, leaking the hostname to the user's network even though the connection itself is
+  subsequently proxied — a documented, unresolved risk for this exact stack, not a hypothetical.
+  Per decision D18, **the relay must not be described as working — here, in `docs/privacy.md`, or in
+  the app's UI — until an instrumented test proves no such DNS query leaves the device outside the
+  configured proxy** (`docs/specs/001-navigation-mvp.md` test 125); that test is a prerequisite of
+  the relay implementation, and if it shows the leak cannot be prevented with this stack, that
+  reopens decision D18 rather than being worked around.
 
 ## 5. Concurrency and lifecycle
 
@@ -346,8 +361,10 @@ data/
   persistence/    implements RouteCache / PlaceCache
   settings/       implements RelaySettingsStore via Jetpack DataStore Preferences (decision D2,
                   docs/adr/014-settings-persistence.md)
-  net/            the networking chokepoint (§4) — relay, coarsening where applicable, rate
-                  limiting, caching
+  net/            the networking chokepoint (§4): a single injected OkHttpClient (decision D17,
+                  docs/adr/006-http-and-serialisation.md) carrying relay (decision D18,
+                  docs/adr/007-relay-and-proxy.md — see §4's DNS-leak caveat), coarsening where
+                  applicable, rate limiting, caching
 
 presentation/
   <feature>/      screen state holders, view-model-equivalents, rendering
@@ -355,7 +372,7 @@ presentation/
 
 ## 9. Undecided, and where the decision lands
 
-**Two rows that used to live in this table are now decided, not undecided**, and are recorded here
+**Four rows that used to live in this table are now decided, not undecided**, and are recorded here
 instead of in the table below so the table's own title stays accurate: **routing engine and data
 shape** is settled as Waze's own routing endpoint (decision D11, `docs/adr/003-routing-engine.md`,
 accepted) — affecting `data` (routing source) and the networking chokepoint, with `domain`'s
@@ -365,15 +382,24 @@ whatever `Route` it receives regardless of how it was computed, see §3), unaffe
 `docs/adr/005-traffic-source-integration.md`, accepted), with the five-minute politeness floor fixed
 by decision D12 — affecting `data` (traffic source) and the networking chokepoint, with `domain`'s
 widened `TrafficIncidentProvider` interface unaffected; the rate-limit policy itself lives in the
-chokepoint (§4), not duplicated in the provider.
+chokepoint (§4), not duplicated in the provider. **HTTP and serialisation stack** is settled as
+OkHttp plus kotlinx.serialization (decision D17, `docs/adr/006-http-and-serialisation.md`, accepted)
+— affecting the networking chokepoint and every network-backed `data` provider, with `domain`
+unaffected (no provider interface mentions HTTP or a serialisation format). **Relay/proxy
+implementation** is settled as a single user-configured HTTP or SOCKS5 proxy (decision D18,
+`docs/adr/007-relay-and-proxy.md`, accepted) — affecting the networking chokepoint exclusively, with
+every provider implementation and all of `domain`/`presentation` unaffected, a provider never
+knowing or caring whether a relay is active. **This last decision carries a live, unresolved risk,
+stated honestly rather than glossed over**: whether DNS resolution for a request's host can be kept
+entirely inside the proxy hop with this stack is not yet verified, and per decision D18 the relay
+must not be described as working anywhere until an instrumented test proves it (§4 above,
+`docs/specs/001-navigation-mvp.md` test 125).
 
 | Open decision | Layer(s) affected | What must NOT depend on the choice |
 |---|---|---|
 | UI toolkit (Compose vs Views) | `presentation` only | `domain` and `data` reference nothing UI-toolkit-specific; use cases return plain domain/data types, not toolkit state holders. |
 | Map rendering and tile source | `data` (tile source implementation) + `presentation` (rendering) | `domain`'s `TileProvider` interface and `Route`/`Incident`/`Position` types are toolkit-agnostic; a map library swap is confined to its `data` implementation plus the `presentation` rendering code. |
 | Geocoding/place-search provider | `data` (geocoding source) | `domain`'s `PlaceSearchProvider` interface and `Place` type. |
-| HTTP and serialization stack | networking chokepoint + every `data` provider that is network-backed | `domain` (no provider interface mentions HTTP or a serialization format); `presentation`. |
-| Relay/proxy implementation (Tor, HTTP/SOCKS proxy, self-hosted instance) | networking chokepoint exclusively | Every provider implementation and all of `domain`/`presentation` — a provider never knows or cares whether a relay is active. |
 | Local persistence for `RouteCache`/`PlaceCache` (Room vs SQLDelight vs plain SQLite — ADR 008) | `data` (persistence implementations of these cache ports) | `domain`'s cache port interfaces; nothing above `data` reads a database row type. **Decided separately**: `RelaySettingsStore` is not part of this open decision — it is settled as Jetpack DataStore Preferences from v0.1 (decision D2, recorded as `docs/adr/014-settings-persistence.md`) precisely so it does not wait on ADR 008, which keeps ownership of the `RouteCache`/`PlaceCache` question only. The v0.1 on-disk tile cache (decision D7) is likewise not part of this open decision: it is a file-based store (see `docs/specs/001-navigation-mvp.md` FR-27–FR-31), not a structured-database question. |
 | Foreground-service and location strategy (v0.2) | `data` (location source) + a v0.2 service component | `domain`'s `OwnPositionSource` interface and use cases consuming `Position`. |
 | Module layout (single module vs multi-module) | build structure, all layers' packaging | The layer responsibilities and dependency direction in §2–§3, which hold regardless of how they are packaged. |
