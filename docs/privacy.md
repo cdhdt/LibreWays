@@ -71,9 +71,13 @@ Using its core features necessarily sends network requests to those services. Co
    proxying can resolve the destination hostname locally by default, leaking *that hostname* to the
    local network outside the proxy hop even while the connection itself is otherwise relayed
    correctly. This app does not claim that local-destination-confidentiality property until an
-   instrumented test proves no such DNS query leaves the device outside the configured proxy; that
-   test is a blocking prerequisite of the relay implementation, not a caveat to be read past
-   (`docs/specs/001-navigation-mvp.md` test 125, `docs/adr/007-relay-and-proxy.md`).
+   **instrumented test, run on a real or emulated device,** proves no such DNS query leaves the
+   device outside the configured proxy; that test is a blocking prerequisite of the relay
+   implementation, not a caveat to be read past (`docs/specs/001-navigation-mvp.md` test 127,
+   `docs/adr/007-relay-and-proxy.md`). A complementary in-process unit test (test 125) checks
+   OkHttp's own client-level construction and is a necessary, but not sufficient, guard — the actual
+   resolution risk lives in the platform's socket/SOCKS implementation below any seam that test
+   reaches, so test 125 passing is never, on its own, the basis for this claim.
 4. **Some data cannot be coarsened without breaking the feature.** A destination search string must
    be sent as typed for geocoding to work. The routing origin and destination coordinates must be
    precise enough to route correctly — this is now certain, not conditional (decision D11): every
@@ -269,10 +273,11 @@ reading the code, not by trusting a claim:
    an optional nicety. **The relay mechanism is decided (decision D18, a single user-configured HTTP
    or SOCKS5 proxy — Tor via Orbot, a generic proxy, and a self-hosted instance all reduce to this
    one transport — recorded as `docs/adr/007-relay-and-proxy.md`), but it must not be described as
-   working until an instrumented test proves no DNS query for a request's host leaves the device
-   outside the configured proxy** — see item 3 under "What this app cannot promise" above and
-   `docs/specs/001-navigation-mvp.md` test 125; that test is a prerequisite of the relay
-   implementation, not a follow-up.
+   working until an instrumented test, on a real or emulated device, proves no DNS query for a
+   request's host leaves the device outside the configured proxy** — see item 3 under "What this app
+   cannot promise" above and `docs/specs/001-navigation-mvp.md` test 127; that test is a prerequisite
+   of the relay implementation, not a follow-up. A complementary in-process unit test (test 125)
+   checks OkHttp's own client-level behaviour but is necessary, not sufficient, on its own.
 2. **Coordinate coarsening to the precision the feature needs.** Viewport and traffic-corridor
    requests round or quantise coordinates rather than sending a raw GPS fix. Exact numeric
    parameters (decimal precision, tile-grid snapping) are a developer-spec decision, not fixed here
@@ -427,11 +432,14 @@ of these without a corresponding update here is incomplete, not merely undocumen
   underlying transport, each with its own label in the settings UI for the trust distinction between
   them — recorded as `docs/adr/007-relay-and-proxy.md`. This is no longer open. **What remains is a
   blocking verification, not a further decision**: the relay may not be described as working, here or
-  anywhere else, until an instrumented test proves no DNS query for a request's host leaves the
-  device outside the configured proxy (`docs/specs/001-navigation-mvp.md` test 125); if that test
-  cannot be made to pass with this app's stack, that reopens decision D18 as an escalation to the
-  maintainer, not a workaround. **Still genuinely open, and distinct from the transport decision
-  above**: whether the settings UI presents the mode set (direct/no relay, Tor, proxy, self-hosted)
+  anywhere else, until an **instrumented test, on a real or emulated device,** proves no DNS query
+  for a request's host leaves the device outside the configured proxy
+  (`docs/specs/001-navigation-mvp.md` test 127); a complementary in-process unit test (test 125)
+  checks OkHttp's own client-level construction but is necessary, not sufficient, since the actual
+  resolution risk lives in the platform's own socket/SOCKS implementation below any seam that test
+  reaches. If test 127 cannot be made to pass with this app's stack, that reopens decision D18 as an
+  escalation to the maintainer, not a workaround. **Still genuinely open, and distinct from the
+  transport decision above**: whether the settings UI presents the mode set (direct/no relay, Tor, proxy, self-hosted)
   as equally weighted choices, or suggests one (e.g. Tor) as a default with the others reachable as
   secondary options — tracked as `docs/specs/001-navigation-mvp.md` OQ5, not settled by D18 or by
   this entry.
