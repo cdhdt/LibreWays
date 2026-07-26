@@ -249,10 +249,13 @@ has to be re-verified every time a provider is added or changed.
   subsequently proxied — a documented, unresolved risk for this exact stack, not a hypothetical.
   Per decision D18, **the relay must not be described as working — in this or any other document
   (including `docs/threat-model.md`'s adversary-1 analysis, which names this exact leak path), or in
-  the app's UI — until an instrumented test proves no such DNS query leaves the device outside the
-  configured proxy** (`docs/specs/001-navigation-mvp.md` test 125); that test is a prerequisite of
-  the relay implementation, and if it shows the leak cannot be prevented with this stack, that
-  reopens decision D18 rather than being worked around.
+  the app's UI — until an instrumented test, on a real or emulated device, proves no such DNS query
+  leaves the device outside the configured proxy** (`docs/specs/001-navigation-mvp.md` test 127); an
+  in-process unit test (test 125) checks OkHttp's own client-level construction and is a useful,
+  necessary guard, but it cannot observe this property on its own — the actual name-resolution risk
+  lives in the platform's own socket/SOCKS implementation, below any seam OkHttp exposes. Test 127
+  is the prerequisite of the relay implementation, and if it shows the leak cannot be prevented with
+  this stack, that reopens decision D18 rather than being worked around.
 
 ## 5. Concurrency and lifecycle
 
@@ -393,8 +396,9 @@ every provider implementation and all of `domain`/`presentation` unaffected, a p
 knowing or caring whether a relay is active. **This last decision carries a live, unresolved risk,
 stated honestly rather than glossed over**: whether DNS resolution for a request's host can be kept
 entirely inside the proxy hop with this stack is not yet verified, and per decision D18 the relay
-must not be described as working anywhere until an instrumented test proves it (§4 above,
-`docs/specs/001-navigation-mvp.md` test 125).
+must not be described as working anywhere until an **instrumented, on-device** test proves it (§4
+above, `docs/specs/001-navigation-mvp.md` test 127) — an in-process unit test (test 125) covers only
+OkHttp's own client-level construction and is not, on its own, that proof.
 
 | Open decision | Layer(s) affected | What must NOT depend on the choice |
 |---|---|---|
