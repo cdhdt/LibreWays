@@ -130,6 +130,18 @@ provider, not to a geocoding provider, not to any relay/proxy, not to a routing 
 `localhost` standing in for one of these. A test that needs "real" data uses a recorded fixture
 checked into version control, built from synthetic input.
 
+**This rule is not weakened for the two transport-containment tests decisions D17/D18 add** (§5:
+the DNS-leak test and the connection-reuse-across-a-relay-change test, `docs/specs/001-navigation-mvp.md`
+tests 125/126). Both are specified against **in-process fakes substituted at the HTTP client's own
+pluggable seams** — a recording `Dns` implementation, a recording `SocketFactory` that fails the
+connection immediately after capturing the address handed to it, and a fake connection-pool
+collaborator — never a real socket, a real proxy, or a `localhost` listener standing in for one.
+This is a deliberate, narrow design choice, not an exception carved into this rule: the property
+under test (does local DNS resolution happen for the destination host; does the chokepoint evict
+its connection pool on a relay change) is observable at the client's construction-time seams without
+ever needing a socket to actually open, so the "no real network call" rule holds for these two tests
+exactly as it does for every other test in this suite.
+
 ---
 
 ## 5. Privacy-specific tests
@@ -142,8 +154,11 @@ demonstrating:
 
 - **Every outbound request goes through the relay path.** A request built for one of these flows
   is routed through the user-selected relay/proxy abstraction — never a code path that can reach
-  the network directly, bypassing the relay selection. This is the single highest-value test in
-  the suite per `CLAUDE.md` §5.1.
+  the network directly, bypassing the relay selection. This is the highest-value test in the suite
+  for verifying the relay is *used* per `CLAUDE.md` §5.1 — **but it does not, by itself, verify the
+  relay's destination-confidentiality property**: a request can pass through the configured proxy
+  and still leak the destination hostname to the local network first, via DNS. See the dedicated
+  DNS-leak test below for that distinct guarantee.
 - **Fail-closed relay behaviour is a regression-guarded property, not an assumption (decision
   D1).** A dedicated test asserts that no outbound call proceeds while `RelayConfiguration` is
   `NotChosen` (surfacing `RelayNotChosen`), and that a configured-but-unreachable relay fails the
@@ -152,6 +167,20 @@ demonstrating:
   `docs/privacy.md` names this a required part of the networking test suite, not an optional
   nicety, and it is distinct from the relay-path test above: that one checks relay is *used*, this
   one checks the app never proceeds *without* one being resolved one way or the other.
+- **No local DNS resolution for the destination host outside the configured proxy — a blocking
+  requirement, not a routine assertion (decision D18, `docs/adr/007-relay-and-proxy.md`).** The
+  relay path test above proves a request travels through the proxy; it does not prove the proxy hop
+  is the *first* place the destination host is disclosed. A dedicated test — using the in-process
+  fakes described in §4 above, never a real socket — asserts that resolving the destination host is
+  never attempted outside the proxy hop for any of the four provider adapters
+  (`docs/specs/001-navigation-mvp.md` test 125). This test must exist and pass before the relay may
+  be described as working, in any document or the app's UI; if it cannot be made to pass with this
+  app's stack, that is an escalation to the maintainer that reopens decision D18, not a workaround.
+- **No connection reuse across a relay-configuration change (decision D18).** A dedicated test
+  asserts the chokepoint evicts its connection pool or rebuilds its client whenever the active
+  `RelayConfiguration` changes, so a connection pooled under a prior relay setting is never reused
+  after the setting changes (`docs/specs/001-navigation-mvp.md` test 126) — verified against a fake
+  connection-pool collaborator, per §4 above.
 - **Coordinates are coarsened for the flows where that is possible** — the traffic and tile flows
   — to the precision the feature actually needs before they leave the `domain`/`data` boundary
   outbound, verified by asserting the precision of what a fake transport actually receives, not by
