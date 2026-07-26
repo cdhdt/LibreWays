@@ -32,19 +32,40 @@ undecided ADR.
   IP/SNI, timing, and size of each connection. Cannot see payload content under TLS.
 - **What it can learn:** which external services the device talks to and when; without a relay,
   connection timing and destination correlate directly with app usage and, transitively, with the
-  third-party providers' own knowledge of the query. With a relay, it learns only that the device is
-  talking to the relay (e.g. a Tor entry node or proxy), not to which provider or with what content.
+  third-party providers' own knowledge of the query. With a relay, it is **designed** to learn only
+  that the device is talking to the relay (e.g. a Tor entry node or proxy), not to which provider or
+  with what content — **but this destination-hiding property is not yet verified for this app's
+  stack, and this adversary is exactly the one who would see the leak if it exists.** Decision D18
+  (`docs/adr/007-relay-and-proxy.md`) records, as a blocking requirement, that Java/Android SOCKS
+  proxying can resolve the destination hostname locally by default: if that happens, this adversary
+  — sitting on the path between the device and the relay — sees the plaintext DNS query for the
+  provider's hostname (DNS is typically unencrypted) even though the subsequent connection itself is
+  correctly relayed. The relay must not be described as hiding the destination from this adversary
+  until an **instrumented test, on a real or emulated device,** proves no such DNS query leaves the
+  device outside the configured proxy (`docs/specs/001-navigation-mvp.md` test 127); an in-process
+  unit test (test 125) checks OkHttp's own client-level construction and is a useful, necessary
+  guard, but the actual resolution risk this adversary would observe lives in the platform's own
+  socket/SOCKS implementation, below any seam that test reaches — test 125 passing is not, on its
+  own, evidence this adversary cannot learn the destination. Until test 127 passes, treat "not to
+  which provider" above as the design intent this app is built toward, not a verified guarantee.
 - **Current exposure:** direct, whenever the user has explicitly chosen "direct, no relay" as their
   relay configuration (decision D1 in `docs/privacy.md`). This is a deliberate selection, not an
   unconfigured default: no outbound request is possible before that choice — or a relay choice — is
   made, so there is no "relay simply wasn't set up yet" exposure window. A user who chooses direct
-  has made an explicit trade-off, not fallen into one.
+  has made an explicit trade-off, not fallen into one. **Also current, pending test 127**: a relay
+  user is exposed to the DNS-leak risk above even though they made the opposite trade-off from
+  "direct" — this is not a configuration gap, it is the unverified-until-tested risk itself.
 - **Mitigation:** user-selectable relay (Tor/HTTP/SOCKS/self-hosted), TLS on every outbound
-  connection.
+  connection. **Not yet a mitigation, pending verification**: preventing local DNS resolution
+  outside the proxy hop (decision D18's blocking, instrumented test,
+  `docs/specs/001-navigation-mvp.md` test 127 — test 125 is a necessary, not sufficient, complement).
 - **Residual risk:** traffic-timing/size correlation against a relay (including Tor) by a
   sufficiently resourced observer is a known, unsolved limitation of relay networks in general, not
   something this app's design can close. An ISP still learns "this device uses a relay/VPN/Tor" even
-  when the relay hides the destination.
+  when the relay does correctly hide the destination — and, separately and more urgently, may learn
+  the destination itself outright if the DNS-leak risk above turns out not to be preventable with
+  this stack, in which case decision D18 is reopened rather than this document being left to overstate
+  what the relay achieves.
 - **Out of scope:** defeating global traffic-analysis adversaries; that is a relay-network research
   problem, not an app-architecture one.
 

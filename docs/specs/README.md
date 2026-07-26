@@ -30,12 +30,14 @@ explicit open question in the spec, not a guess.
 | Open questions | Marked **"Open question — human decision required"**; empty only if genuinely none |
 
 A spec that needs one of the open decisions in `CLAUDE.md` §0.2 (UI toolkit, map/tiles, geocoding,
-HTTP stack, persistence, scheduling, module layout, CI) references the relevant
+persistence, scheduling, module layout, CI) references the relevant
 [`../adr/proposals/`](../adr/proposals/) file by name instead of picking a library, and states
 plainly which parts of the work can start before that decision and which cannot. The routing
-engine and the traffic/incident source are no longer among these open decisions — both are decided
-(Waze, decisions D10/D11, `docs/adr/003-routing-engine.md` and
-`docs/adr/005-traffic-source-integration.md`).
+engine, the traffic/incident source, the HTTP client/serialisation stack, and the relay transport
+are no longer among these open decisions — all four are decided (Waze, decisions D10/D11,
+`docs/adr/003-routing-engine.md` and `docs/adr/005-traffic-source-integration.md`; OkHttp plus
+kotlinx.serialization and a single user-configured HTTP/SOCKS5 proxy, decisions D17/D18,
+`docs/adr/006-http-and-serialisation.md` and `docs/adr/007-relay-and-proxy.md`).
 
 ## Naming convention
 

@@ -2,13 +2,15 @@
 
 ## Status
 
-`proposed`
-
-Nothing in this document is authority until the human accepts it and it is recorded as an accepted
-ADR per `CLAUDE.md` §0.2. **Two sub-questions this document originally left open — fail-closed vs.
-fail-open, and whether an explicit relay choice is required before the first outbound call — have
-since been decided by the maintainer** (see [Fail-closed vs. fail-open](#fail-closed-vs-fail-open-when-the-relay-is-unreachable--decided)
-and leak-risk item 5 below). **The transport mechanism itself (Option A/B/C) remains open.**
+`superseded by 007-relay-and-proxy.md` (accepted, decision D18) — this brief's analysis led directly
+to that decision; it is kept here as the record of the analysis, per `docs/adr/README.md`'s
+lifecycle, and is no longer itself open. Do not treat anything below as inviting a re-open. **Two
+sub-questions this document originally left open — fail-closed vs. fail-open, and whether an
+explicit relay choice is required before the first outbound call — were already decided by the
+maintainer before this brief was resolved** (see [Fail-closed vs. fail-open](#fail-closed-vs-fail-open-when-the-relay-is-unreachable--decided)
+and leak-risk item 5 below); the transport mechanism itself (Option A/B/C), then the one remaining
+open question, is now decided too — see [`../007-relay-and-proxy.md`](../007-relay-and-proxy.md)
+for the decision, its reasoning, and the blocking DNS-leak verification it carries.
 
 ## Context
 

@@ -2,7 +2,10 @@
 
 ## Status
 
-`proposed`
+`superseded by 006-http-and-serialisation.md` (accepted, decision D17) — this brief's analysis led
+directly to that decision; it is kept here as the record of the analysis, per
+`docs/adr/README.md`'s lifecycle, and is no longer itself open. Do not treat anything below as
+inviting a re-open.
 
 ## Context
 

@@ -128,7 +128,24 @@ choice.
 **No test may perform a real network call.** Not to the traffic endpoint, not to the tile
 provider, not to a geocoding provider, not to any relay/proxy, not to a routing service, not to
 `localhost` standing in for one of these. A test that needs "real" data uses a recorded fixture
-checked into version control, built from synthetic input.
+checked into version control, built from synthetic input. **This rule exists because a test must
+not depend on network availability or on a third party** — a real socket call makes a test slow,
+flaky, and coupled to infrastructure this project does not control, exactly what the pyramid in §2
+is built to avoid.
+
+**One narrow, named exception, decided by the maintainer: verifying no destination-host name lookup
+escapes the configured proxy (decision D18, `docs/adr/007-relay-and-proxy.md`).** This specific
+property does not live at any seam the app's own code or OkHttp expose — it lives in the platform's
+own socket and SOCKS implementation, below the level any in-process fake can observe or substitute
+(see §5 for the in-process test that *does* cover this feature's client-level behaviour; that test
+is necessary but not sufficient for this property, which is why this exception exists at all). A
+transport-level test may therefore open a real socket, on a real or emulated device, through a
+real, test-controlled proxy, with an instrumented resolver recording every name-lookup request the
+device makes, **solely** to assert that no such lookup for a request's host occurs outside that
+proxy (`docs/specs/001-navigation-mvp.md` test 127). This is the **only** sanctioned use of a real
+socket in this test suite. It is not precedent for writing a network-dependent test for anything
+else — every other test in this suite, including the client-level half of this same property (test
+125), stays exactly as bound by the rule above as it was before this exception existed.
 
 ---
 
@@ -142,8 +159,11 @@ demonstrating:
 
 - **Every outbound request goes through the relay path.** A request built for one of these flows
   is routed through the user-selected relay/proxy abstraction — never a code path that can reach
-  the network directly, bypassing the relay selection. This is the single highest-value test in
-  the suite per `CLAUDE.md` §5.1.
+  the network directly, bypassing the relay selection. This is the highest-value test in the suite
+  for verifying the relay is *used* per `CLAUDE.md` §5.1 — **but it does not, by itself, verify the
+  relay's destination-confidentiality property**: a request can pass through the configured proxy
+  and still leak the destination hostname to the local network first, via DNS. See the dedicated
+  DNS-leak test below for that distinct guarantee.
 - **Fail-closed relay behaviour is a regression-guarded property, not an assumption (decision
   D1).** A dedicated test asserts that no outbound call proceeds while `RelayConfiguration` is
   `NotChosen` (surfacing `RelayNotChosen`), and that a configured-but-unreachable relay fails the
@@ -152,6 +172,31 @@ demonstrating:
   `docs/privacy.md` names this a required part of the networking test suite, not an optional
   nicety, and it is distinct from the relay-path test above: that one checks relay is *used*, this
   one checks the app never proceeds *without* one being resolved one way or the other.
+- **No local DNS resolution for the destination host outside the configured proxy — split into its
+  two testable halves, decision D18 (`docs/adr/007-relay-and-proxy.md`).** The relay path test above
+  proves a request travels through the proxy; it does not prove the proxy hop is the *first* place
+  the destination host is disclosed, and that property does not reduce to one test:
+  - **Client-level (necessary, not sufficient).** An in-process test asserts OkHttp's own
+    construction never resolves the destination host through its own `Dns` seam, and that the
+    address handed onward for a SOCKS route is left unresolved
+    (`docs/specs/001-navigation-mvp.md` test 125). This rules out one class of bug, but the actual
+    name-resolution path once a socket opens runs in the platform's own socket/SOCKS
+    implementation, which this test cannot see.
+  - **Device-level (the actual blocking requirement).** An instrumented test, under §4's narrow
+    exception, opens a real socket on a real or emulated device and asserts no name lookup for the
+    destination host escapes the configured proxy (`docs/specs/001-navigation-mvp.md` test 127).
+    **This is the test that must exist and pass before the relay may be described as working, in
+    any document or the app's UI** — test 125 alone does not license that claim. If test 127 cannot
+    be made to pass with this app's stack, that is an escalation to the maintainer that reopens
+    decision D18, not a workaround.
+- **No connection reuse across a relay-configuration change (decision D18).** A dedicated test
+  asserts the chokepoint's own connection-pool-management collaborator — an **app-owned
+  abstraction** the chokepoint depends on and injects, wrapping OkHttp's `ConnectionPool` (a `final`
+  type; hand-writing a fake of the app's own interface is what `docs/adr/012-build-and-test-tooling.md`'s
+  no-mocking-library rule already prescribes, not a fake of OkHttp's type directly) — is told to
+  evict or rebuild whenever the active `RelayConfiguration` changes, so a connection pooled under a
+  prior relay setting is never reused after the setting changes
+  (`docs/specs/001-navigation-mvp.md` test 126).
 - **Coordinates are coarsened for the flows where that is possible** — the traffic and tile flows
   — to the precision the feature actually needs before they leave the `domain`/`data` boundary
   outbound, verified by asserting the precision of what a fake transport actually receives, not by
@@ -221,6 +266,7 @@ Some things do not reduce to a deterministic function call:
 | Real foreground-service notification behaviour under Doze (v0.2+) | Manual verification on a device/emulator; documented in the PR's test evidence |
 | Actual battery/memory cost in the field | Manual profiling (Android Studio profiler or equivalent) attached as PR evidence when a change plausibly affects it, per `CLAUDE.md` §4 |
 | Reproducible-build/F-Droid pipeline correctness | CI job once the ADR in `adr/proposals/011-ci-reproducible-build-fdroid.md` is decided and implemented — not a unit test |
+| Whether a name lookup for the destination host escapes the device outside the configured proxy (decision D18) | Instrumented test on a real or emulated device (`docs/specs/001-navigation-mvp.md` test 127) — the one narrow, named exception to §4's no-real-network rule, since this property lives in the platform's own socket/SOCKS implementation, not any in-process seam |
 
 None of these substitute for the tests in §1–§6 where those apply; they cover only what is
 structurally outside a deterministic test's reach.

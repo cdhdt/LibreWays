@@ -58,12 +58,26 @@ Using its core features necessarily sends network requests to those services. Co
    the geocoding provider, or Waze (traffic, congestion, and routing), we have no visibility into
    what that operator logs, retains, correlates, or shares. We can only control what we send, not
    what happens to it afterwards.
-3. **A relay hides the requester's IP, not the request content.** Routing traffic through Tor, a
-   proxy, or a self-hosted instance stops the destination provider from learning the user's network
-   origin. It does not stop the provider from seeing the query itself (a search string, a viewport,
-   or — worst case — a routing origin/destination pair). It also does not defeat a sufficiently
-   resourced adversary doing traffic-timing correlation against the relay network itself; see
-   `docs/threat-model.md`.
+3. **A relay hides the requester's IP from the destination, not the request content.** Routing
+   traffic through Tor, a proxy, or a self-hosted instance (decision D18, a single user-configured
+   HTTP or SOCKS5 proxy, `docs/adr/007-relay-and-proxy.md`) is *designed* to stop the destination
+   provider from learning the user's network origin. It is not designed to stop the provider from
+   seeing the query itself (a search string, a viewport, or — worst case — a routing
+   origin/destination pair), and it does not defeat a sufficiently resourced adversary doing
+   traffic-timing correlation against the relay network itself; see `docs/threat-model.md`.
+   **A separate, distinct property is not yet verified for this app's stack**: whether the relay
+   hides *which host the app is contacting* from the user's own local network and ISP — not the
+   requester's-IP-from-the-destination property above, a different guarantee. Java/Android SOCKS
+   proxying can resolve the destination hostname locally by default, leaking *that hostname* to the
+   local network outside the proxy hop even while the connection itself is otherwise relayed
+   correctly. This app does not claim that local-destination-confidentiality property until an
+   **instrumented test, run on a real or emulated device,** proves no such DNS query leaves the
+   device outside the configured proxy; that test is a blocking prerequisite of the relay
+   implementation, not a caveat to be read past (`docs/specs/001-navigation-mvp.md` test 127,
+   `docs/adr/007-relay-and-proxy.md`). A complementary in-process unit test (test 125) checks
+   OkHttp's own client-level construction and is a necessary, but not sufficient, guard — the actual
+   resolution risk lives in the platform's socket/SOCKS implementation below any seam that test
+   reaches, so test 125 passing is never, on its own, the basis for this claim.
 4. **Some data cannot be coarsened without breaking the feature.** A destination search string must
    be sent as typed for geocoding to work. The routing origin and destination coordinates must be
    precise enough to route correctly — this is now certain, not conditional (decision D11): every
@@ -245,7 +259,8 @@ reading the code, not by trusting a claim:
 
 1. **User-selectable relay applied to every outbound request by construction, with an explicit
    choice required and a fail-closed failure mode (decision D1).** The networking layer has a
-   single egress point (or a small, enumerable set of them) through which all HTTP traffic to tile,
+   single egress point — one constructor-injected `OkHttpClient` instance (decision D17,
+   `docs/adr/006-http-and-serialisation.md`) — through which all HTTP traffic to tile,
    traffic, geocoding, and routing (Waze/Google, decision D11 — remote and certain, not conditional)
    providers is routed. There must
    be no code path that constructs a network client bypassing that egress point. A code reviewer
@@ -255,8 +270,14 @@ reading the code, not by trusting a claim:
    chooses one or the other; a configured relay that is unreachable fails the request rather than
    silently falling back to direct. A test asserting this — i.e. one that fails if fail-open
    behaviour were shipped by accident — is a required part of the networking layer's test suite, not
-   an optional nicety. Candidate relay targets (Tor, an HTTP/SOCKS proxy, a self-hosted instance) are
-   evaluated in `docs/adr/proposals/007-relay-and-proxy.md`.
+   an optional nicety. **The relay mechanism is decided (decision D18, a single user-configured HTTP
+   or SOCKS5 proxy — Tor via Orbot, a generic proxy, and a self-hosted instance all reduce to this
+   one transport — recorded as `docs/adr/007-relay-and-proxy.md`), but it must not be described as
+   working until an instrumented test, on a real or emulated device, proves no DNS query for a
+   request's host leaves the device outside the configured proxy** — see item 3 under "What this app
+   cannot promise" above and `docs/specs/001-navigation-mvp.md` test 127; that test is a prerequisite
+   of the relay implementation, not a follow-up. A complementary in-process unit test (test 125)
+   checks OkHttp's own client-level behaviour but is necessary, not sufficient, on its own.
 2. **Coordinate coarsening to the precision the feature needs.** Viewport and traffic-corridor
    requests round or quantise coordinates rather than sending a raw GPS fix. Exact numeric
    parameters (decimal precision, tile-grid snapping) are a developer-spec decision, not fixed here
@@ -360,7 +381,10 @@ here before merge. No such feature is planned in any milestone in the current pr
 - **Network capture:** use a FOSS on-device capture tool (e.g. PCAPdroid) or a MITM proxy to
   observe every connection the app makes while exercising each feature. Confirm: only the endpoints
   documented above are contacted; nothing fires without a corresponding action you just took; when a
-  relay is configured, the first-hop destination is the relay, not the underlying provider.
+  relay is configured, the first-hop destination is the relay, not the underlying provider; and,
+  specifically, that no DNS query for a provider's hostname is visible on the network outside the
+  proxy hop — this last check is the manual counterpart of the blocking automated test
+  `docs/adr/007-relay-and-proxy.md` requires before the relay may be described as working at all.
 - **Firewall/logging:** a FOSS per-app firewall can confirm the app makes no connection attempts
   while idle or backgrounded outside an active foreground guidance session.
 - **Logs:** run `adb logcat` while using every feature and search the output for coordinate-like
@@ -403,9 +427,29 @@ of these without a corresponding update here is incomplete, not merely undocumen
   with overlapping areas coalesced into one request. **Still open:** the traffic response cache's own
   size cap and time-to-live (OQ7 in `docs/specs/001-navigation-mvp.md`, decisions D7/D9) — a distinct
   parameter from the five-minute politeness floor, not settled by D12.
-- **Open question — human decision required:** concrete relay/proxy implementation, and whether it
-  is offered as an equally-weighted user choice among Tor/HTTP/SOCKS/self-hosted, or one is a
-  suggested default — `docs/adr/proposals/007-relay-and-proxy.md`.
+- **Settled (decision D18) — relay/proxy transport.** The mechanism is a single user-configured HTTP
+  or SOCKS5 proxy — covering Tor via Orbot, a generic proxy, and a self-hosted instance as one
+  underlying transport, each with its own label in the settings UI for the trust distinction between
+  them — recorded as `docs/adr/007-relay-and-proxy.md`. This is no longer open. **What remains is a
+  blocking verification, not a further decision**: the relay may not be described as working, here or
+  anywhere else, until an **instrumented test, on a real or emulated device,** proves no DNS query
+  for a request's host leaves the device outside the configured proxy
+  (`docs/specs/001-navigation-mvp.md` test 127); a complementary in-process unit test (test 125)
+  checks OkHttp's own client-level construction but is necessary, not sufficient, since the actual
+  resolution risk lives in the platform's own socket/SOCKS implementation below any seam that test
+  reaches. If test 127 cannot be made to pass with this app's stack, that reopens decision D18 as an
+  escalation to the maintainer, not a workaround. **Still genuinely open, and distinct from the
+  transport decision above**: whether the settings UI presents the mode set (direct/no relay, Tor, proxy, self-hosted)
+  as equally weighted choices, or suggests one (e.g. Tor) as a default with the others reachable as
+  secondary options — tracked as `docs/specs/001-navigation-mvp.md` OQ5, not settled by D18 or by
+  this entry.
+- **Settled (decision D19) — no authenticated-proxy support in v0.1.** A relay/proxy credential
+  (username/password) is out of scope for this milestone: it would need its own storage-at-rest
+  decision (ADR 014's unencrypted DataStore Preferences is not an authorisation to persist a
+  credential there) and adds a leak surface for marginal benefit, since a user who needs
+  authentication can run a local unauthenticated listener in front of their proxy instead. Recorded
+  as an explicit non-goal, revisable like any accepted decision — see
+  `docs/adr/007-relay-and-proxy.md`.
 - **Settled (decision D1) — first-run and fail-closed behaviour.** First run performs **zero**
   network requests before the user has made an explicit relay choice; "direct, no relay" is itself
   that choice, never the silent result of leaving the setting untouched. A configured relay that
