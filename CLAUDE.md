@@ -3,7 +3,12 @@
 **Authority.** This file is binding for every Claude session and every subagent working in this
 repository. An agent may not deviate from, reinterpret, shorten, or "optimise away" any rule here.
 When a rule blocks progress, the agent stops and escalates to the human — it never improvises an
-alternative. Only the human developer can amend this file.
+alternative. Only the human developer can amend this file, with two narrow, standing exceptions
+delegated to the orchestrator: keeping §0.2's open-decisions list factually current as each
+decision lands (removing an entry once its ADR is accepted, never adding one), and recording, as an
+accepted ADR, a decision the maintainer explicitly authorises the orchestrator to make on the
+maintainer's behalf (as done for ADR 012 and this batch's ADR 006/007 and the D19 record). Every
+other amendment to this file remains the maintainer's alone.
 
 **Language.** All technical artefacts are in **English**: code, identifiers, comments, commits,
 branch names, PR titles and bodies, issues, `docs/`. Conversation with the human may be in French.
@@ -51,11 +56,6 @@ non-negotiables, recommendation) and the **human decides**; the decision is then
 UI toolkit (Compose vs Views) · map rendering and tile source · local persistence (Room vs
 SQLDelight vs plain SQLite) · background scheduling strategy · module layout · CI setup and
 reproducible-build pipeline.
-
-The HTTP client and serialisation stack, formerly listed here, is decided (OkHttp plus
-kotlinx.serialization, decision D17, `docs/adr/006-http-and-serialisation.md`) and removed from
-this list accordingly — a bookkeeping correction to this specific entry, not a reopening of §0.2's
-authority over the rest of the list.
 
 An agent that needs one of these before an ADR exists **stops and asks** — it does not pick
 silently, and it does not treat a brainstorming transcript as a decision.
