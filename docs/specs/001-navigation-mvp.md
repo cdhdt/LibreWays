@@ -957,7 +957,7 @@ setting change — none of which the existing tests above assert directly.
 - [ ] Tests 123 and 124 pass: exactly one `OkHttpClient` instance backs every network-backed
       provider adapter, with a test that fails if any adapter is found to bypass it (FR-40), and the
       shared JSON deserialiser ignores unknown fields rather than rejecting an otherwise-parseable
-      response (FR-41, decisions D17).
+      response (FR-41, decision D17).
 - [ ] **Test 125 passes — blocking, not optional.** No DNS query for a request's host leaves the
       device outside the configured proxy (FR-42, decision D18). Until this test exists and passes,
       the relay must not be described as working, in this document, `docs/privacy.md`, or the app's
