@@ -72,6 +72,12 @@ actually created.
 `HttpURLConnection`, Moshi, Gson — see Options above and the brief's own per-option detail for the
 full reasoning.
 
+**Confidence: high**, matching the brief's own stated confidence for this recommendation. Both
+verified facts driving the choice (kotlinx.serialization's reflection-free operation, OkHttp's
+absence of a forced Play Services dependency) are directly confirmed, not inferred, and both
+libraries' current versions and licences were independently re-checked for this ADR rather than
+carried forward from the brief.
+
 ## Requirements this implies, to be specified and tested
 
 - **Exactly one `OkHttpClient` instance for the whole app**, constructor-injected into every
