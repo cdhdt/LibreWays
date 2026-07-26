@@ -49,8 +49,13 @@ non-negotiables, recommendation) and the **human decides**; the decision is then
 `docs/adr/NNN-<title>.md` and becomes binding.
 
 UI toolkit (Compose vs Views) · map rendering and tile source · local persistence (Room vs
-SQLDelight vs plain SQLite) · HTTP and serialisation stack · background scheduling strategy ·
-module layout · CI setup and reproducible-build pipeline.
+SQLDelight vs plain SQLite) · background scheduling strategy · module layout · CI setup and
+reproducible-build pipeline.
+
+The HTTP client and serialisation stack, formerly listed here, is decided (OkHttp plus
+kotlinx.serialization, decision D17, `docs/adr/006-http-and-serialisation.md`) and removed from
+this list accordingly — a bookkeeping correction to this specific entry, not a reopening of §0.2's
+authority over the rest of the list.
 
 An agent that needs one of these before an ADR exists **stops and asks** — it does not pick
 silently, and it does not treat a brainstorming transcript as a decision.
