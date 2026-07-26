@@ -1,19 +1,21 @@
 package org.libreways.domain.model
 
 import kotlin.test.Test
-import kotlin.test.assertNotEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class RelayConfigurationTest {
     @Test
-    fun `NotChosen is distinct from every selectable mode`() {
+    fun `NotChosen is not a member of the selectable modes`() {
         val notChosen: RelayConfiguration = RelayConfiguration.NotChosen
 
-        val proxy = RelayConfiguration.Proxy(host = "proxy.example", port = 1080)
-        val selfHosted = RelayConfiguration.SelfHosted(endpointUrl = "https://relay.example")
+        assertFalse(notChosen is RelayConfiguration.Selected)
+    }
 
-        assertNotEquals<RelayConfiguration>(RelayConfiguration.Direct, notChosen)
-        assertNotEquals<RelayConfiguration>(RelayConfiguration.Tor, notChosen)
-        assertNotEquals<RelayConfiguration>(proxy, notChosen)
-        assertNotEquals<RelayConfiguration>(selfHosted, notChosen)
+    @Test
+    fun `Direct is a member of the selectable modes`() {
+        val direct: RelayConfiguration = RelayConfiguration.Direct
+
+        assertTrue(direct is RelayConfiguration.Selected)
     }
 }
